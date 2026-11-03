@@ -1,0 +1,70 @@
+name: AI Telesales — สร้างโปรแกรม Windows
+
+# สร้างไฟล์ AI-Telesales.exe บนเครื่อง Windows ของ GitHub แล้วปล่อยเป็น Release
+# ลิงก์ดาวน์โหลดตัวล่าสุด (ไม่เปลี่ยน):
+#   https://github.com/<owner>/<repo>/releases/latest/download/AI-Telesales.exe
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: telesales-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ติดตั้งเครื่องมือสร้างโปรแกรม
+        run: python -m pip install --upgrade pip pyinstaller==6.11.1 pywebview==5.3.2 tzdata
+
+      - name: รันชุดทดสอบ
+        run: python -m unittest discover -s tests
+
+      - name: สร้าง AI-Telesales.exe
+        run: >
+          pyinstaller desktop.py --onefile --windowed --noconfirm --name AI-Telesales
+          --add-data "config.json;."
+          --add-data "products.json;."
+          --add-data "customers.example.csv;."
+          --add-data "telesales/static;telesales/static"
+          --hidden-import telesales.web
+          --collect-all webview
+          --collect-data tzdata
+
+      - name: ทดสอบว่า .exe เปิดได้จริง
+        shell: pwsh
+        run: |
+          $env:TELESALES_HOME = "$env:RUNNER_TEMP\telesales-home"
+          $p = Start-Process -FilePath dist\AI-Telesales.exe -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:TELESALES_HOME\program.log" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "selftest ไม่ผ่าน (exit $($p.ExitCode))" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Telesales-windows
+          path: dist/AI-Telesales.exe
+
+      - name: ปล่อยเป็น Release (ลิงก์ดาวน์โหลด)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: telesales-v${{ github.run_number }}
+          name: AI Telesales สำหรับ Windows (รุ่น ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: dist/AI-Telesales.exe
+          body: |
+            ดาวน์โหลด **AI-Telesales.exe** ด้านล่าง แล้วดับเบิลคลิกเพื่อเปิดโปรแกรม
+            ข้อมูลทั้งหมดเก็บที่ Documents\AI-Telesales (อัปเดตโปรแกรมแล้วข้อมูลไม่หาย)
+
+            ถ้า Windows ขึ้นหน้าจอสีน้ำเงิน "Windows protected your PC" ให้กด **More info → Run anyway**

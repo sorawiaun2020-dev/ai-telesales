@@ -1,0 +1,13 @@
+# ข้อมูลลูกค้าและคีย์ — ห้ามขึ้น Git
+telesales.db
+secrets.json
+exports/
+*.csv
+!customers.example.csv
+*.tmp
+.env
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec

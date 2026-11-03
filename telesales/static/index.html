@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Telesales</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%93%9E%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f5f7f4; --card: #fff; --ink: #1d2a1f; --muted: #66756a; --line: #dfe6df;
+    --brand: #2f7d4a; --brand-ink: #fff; --brand-soft: #e5f2e9;
+    --warn: #a35d00; --warn-soft: #fff3df; --bad: #b3261e; --bad-soft: #fde8e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121713; --card: #1b221c; --ink: #e5ece6; --muted: #98a69b; --line: #2d372f;
+      --brand: #5fbf80; --brand-ink: #0d1a11; --brand-soft: #1f3326;
+      --warn: #f0b35b; --warn-soft: #33281a; --bad: #f2867d; --bad-soft: #3a1f1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 "Sarabun", "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .bar { max-width: 1100px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .logo { font-weight: 700; font-size: 18px; margin-right: auto; }
+  .pill { font-size: 13px; padding: 3px 10px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); }
+  .pill.off { background: var(--line); color: var(--muted); }
+  nav { max-width: 1100px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+  nav button { border: 0; background: none; color: var(--muted); padding: 10px 14px; font: inherit; cursor: pointer;
+               border-bottom: 3px solid transparent; white-space: nowrap; }
+  nav button.on { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  section { display: none; } section.on { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .stat .k { color: var(--muted); font-size: 13px; } .stat .v { font-size: 24px; font-weight: 700; }
+  label { display: block; font-size: 13.5px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+       border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  textarea { min-height: 70px; resize: vertical; }
+  input[type=checkbox] { width: auto; }
+  .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 12px; }
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 600;
+         padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+  .btn.pri { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .btn.bad { color: var(--bad); }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tbl th { text-align: left; color: var(--muted); font-weight: 600; font-size: 13px; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .tbl td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .scroll { overflow-x: auto; }
+  .tbl input, .tbl textarea { padding: 6px 8px; } .tbl textarea { min-height: 38px; }
+  .check { list-style: none; padding: 0; margin: 0; }
+  .check li { padding: 6px 0; display: flex; gap: 10px; align-items: baseline; }
+  .check .ok { color: var(--brand); font-weight: 700; } .check .no { color: var(--warn); font-weight: 700; }
+  .log { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; height: 220px;
+         overflow: auto; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+  .tag { display: inline-block; font-size: 12.5px; padding: 1px 8px; border-radius: 99px; background: var(--line); }
+  .tag.ordered, .tag.done { background: var(--brand-soft); color: var(--brand); }
+  .tag.callback, .tag.retry, .tag.calling { background: var(--warn-soft); color: var(--warn); }
+  .tag.do_not_call, .tag.dnc { background: var(--bad-soft); color: var(--bad); }
+  .call { border-top: 1px solid var(--line); padding: 12px 0; }
+  .call:first-child { border-top: 0; }
+  .call .meta { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--muted); } .small { font-size: 13px; }
+  .warnbox { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+  pre.prompt { white-space: pre-wrap; background: var(--bg); padding: 12px; border-radius: 8px; font-size: 13px; max-height: 420px; overflow: auto; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+           padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; z-index: 10; }
+  #toast.show { opacity: 1; } #toast.err { background: var(--bad); color: #fff; }
+  .days label { display: inline-flex; gap: 4px; align-items: center; margin-right: 12px; color: var(--ink); font-size: 14px; }
+  .pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">📞 AI Telesales</div>
+    <span id="hdrShop" class="muted small"></span>
+    <span id="hdrCampaign" class="pill off">หยุดอยู่</span>
+  </div>
+  <nav id="tabs">
+    <button data-t="home" class="on">ภาพรวม</button>
+    <button data-t="products">สินค้า</button>
+    <button data-t="customers">ลูกค้า</button>
+    <button data-t="results">ผลการโทร / ออเดอร์</button>
+    <button data-t="settings">ตั้งค่า</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ภาพรวม -->
+  <section id="home" class="on">
+    <div id="cfgError"></div>
+    <div class="grid" id="stats" style="margin-bottom:16px"></div>
+
+    <div class="card">
+      <h2>เช็กลิสต์ก่อนเริ่ม</h2>
+      <p class="sub">ทำให้ครบทุกข้อ แล้วค่อยเริ่มโทรหาลูกค้าจริง</p>
+      <ul class="check" id="checklist"></ul>
+    </div>
+
+    <div class="card">
+      <h2>โทรทดสอบหาเบอร์ตัวเอง</h2>
+      <p class="sub">ลองเล่นเป็นลูกค้าหลายแบบ: ตกลงซื้อ, ต่อราคา, ไม่สนใจ, บอกว่าไม่ต้องโทรมาอีก</p>
+      <div class="row">
+        <div><label>เบอร์โทร</label><input id="tcPhone" placeholder="08x-xxx-xxxx" inputmode="tel"></div>
+        <div><label>ชื่อที่ให้ AI เรียก</label><input id="tcName" value="สมชาย"></div>
+        <div><label>สินค้าที่เคยซื้อ (สมมติ)</label><input id="tcLast" value="ถุงปลูกผัก 12 นิ้ว 50 ใบ"></div>
+      </div>
+      <button class="btn pri" id="tcBtn">โทรทดสอบ</button>
+    </div>
+
+    <div class="card">
+      <h2>โทรหาลูกค้า</h2>
+      <p class="sub" id="openNow"></p>
+      <div class="btns" style="margin-bottom:12px">
+        <label style="margin:0">โทรตอนนี้</label>
+        <input id="cnLimit" type="number" min="1" max="500" value="10" style="width:90px">
+        <span class="muted small">สาย</span>
+        <button class="btn" id="cnBtn">โทรเลย 1 รอบ</button>
+        <button class="btn" id="pvBtn">ดูคิวว่าจะโทรหาใคร</button>
+        <button class="btn" id="syncBtn">ดึงผลการโทรล่าสุด</button>
+      </div>
+      <div class="btns">
+        <label style="margin:0">โทรอัตโนมัติทุก</label>
+        <input id="acInterval" type="number" min="1" value="5" style="width:80px">
+        <span class="muted small">นาที (เฉพาะในเวลาโทรที่ตั้งไว้)</span>
+        <button class="btn pri" id="acStart">▶ เริ่มโทรอัตโนมัติ</button>
+        <button class="btn bad" id="acStop">■ หยุด</button>
+      </div>
+      <div id="preview"></div>
+    </div>
+
+    <div class="card">
+      <h2>บันทึกการทำงาน</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+
+  <!-- สินค้า -->
+  <section id="products">
+    <div class="card">
+      <h2>รายการสินค้า</h2>
+      <p class="sub">AI จะเสนอขายและบอกราคาจากตารางนี้เท่านั้น ติ๊ก "แนะนำ" ที่สินค้าที่อยากให้ AI เสนอก่อน
+        เมื่อแก้เสร็จ กด <b>บันทึก</b> แล้วกด <b>อัปเดตบทพูดให้ AI</b></p>
+      <div class="scroll">
+        <table class="tbl" id="prodTbl">
+          <thead><tr><th>รหัส</th><th>ชื่อสินค้า</th><th>ราคา (บาท)</th><th>หน่วย</th><th>ขั้นต่ำ</th><th>จุดเด่น</th><th>แนะนำ</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="btns" style="margin-top:12px">
+        <button class="btn" id="prodAdd">+ เพิ่มสินค้า</button>
+        <button class="btn pri" id="prodSave">บันทึก</button>
+        <button class="btn pri" id="syncAsst">อัปเดตบทพูดให้ AI</button>
+        <button class="btn" id="showPrompt">ดูบทพูดของ AI</button>
+      </div>
+      <div id="promptBox"></div>
+    </div>
+  </section>
+
+  <!-- ลูกค้า -->
+  <section id="customers">
+    <div class="card">
+      <h2>นำเข้ารายชื่อลูกค้า</h2>
+      <p class="sub">ใน Excel กด <b>Save As → CSV UTF-8</b> (หรือ CSV ธรรมดาก็ได้)
+        คอลัมน์ต้องมี <b>ชื่อ</b> และ <b>เบอร์โทร</b> ส่วน <b>สินค้าที่เคยซื้อ</b> กับ <b>หมายเหตุ</b> ใส่หรือไม่ใส่ก็ได้
+        นำเข้าไฟล์เดิมซ้ำได้ ระบบไม่สร้างรายชื่อซ้ำ และไม่รีเซ็ตคนที่โทรไปแล้ว</p>
+      <div class="btns">
+        <input type="file" id="csvFile" accept=".csv,text/csv" style="max-width:320px">
+        <button class="btn pri" id="csvBtn">นำเข้า</button>
+      </div>
+      <div id="importResult"></div>
+    </div>
+    <div class="card">
+      <h2>รายชื่อลูกค้า <span class="muted small" id="custTotal"></span></h2>
+      <div class="row">
+        <div><label>ค้นหาชื่อหรือเบอร์</label><input id="custQ" placeholder="พิมพ์แล้วกด Enter"></div>
+        <div><label>สถานะ</label><select id="custStatus"><option value="">ทั้งหมด</option></select></div>
+      </div>
+      <div class="scroll">
+        <table class="tbl" id="custTbl">
+          <thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เคยซื้อ</th><th>สถานะ</th><th>โทรแล้ว</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="custPager"></div>
+    </div>
+  </section>
+
+  <!-- ผลการโทร -->
+  <section id="results">
+    <div class="card">
+      <h2>ดาวน์โหลด</h2>
+      <p class="sub">เปิดใน Excel ได้ ยอดเงินคำนวณจากราคาในตารางสินค้า ไม่ใช่ตัวเลขที่ AI พูด
+        <b>ควรส่ง SMS หรือไลน์ยืนยันกับลูกค้าก่อนส่งของ</b></p>
+      <div class="btns">
+        <a class="btn pri" href="/export/orders.csv">⬇ ออเดอร์ (orders.csv)</a>
+        <a class="btn" href="/export/callbacks.csv">⬇ ลูกค้าที่ขอให้โทรกลับ</a>
+        <button class="btn" id="openFolder">📁 เปิดโฟลเดอร์ข้อมูล</button>
+      </div>
+      <p class="muted small" id="folderPath"></p>
+    </div>
+    <div class="card">
+      <h2>สายล่าสุด <span class="muted small" id="callTotal"></span></h2>
+      <div class="row"><div><label>ผลการโทร</label><select id="callOutcome"><option value="">ทั้งหมด</option></select></div></div>
+      <div id="callList"></div>
+      <div class="pager" id="callPager"></div>
+    </div>
+  </section>
+
+  <!-- ตั้งค่า -->
+  <section id="settings">
+    <div class="card">
+      <h2>ข้อมูลร้าน</h2>
+      <div class="row">
+        <div><label>ชื่อร้าน (AI จะแนะนำตัวด้วยชื่อนี้)</label><input id="sName"></div>
+        <div><label>ชื่อพนักงาน AI</label><input id="sAgent"></div>
+      </div>
+      <div class="row">
+        <div><label>ช่องทางชำระเงิน (บรรทัดละ 1 ช่องทาง)</label><textarea id="sPay"></textarea></div>
+        <div><label>ค่าส่ง / ระยะเวลาจัดส่ง</label><textarea id="sShip"></textarea></div>
+      </div>
+      <div class="row">
+        <div><label>โปรโมชันตอนนี้ (เว้นว่างได้)</label><textarea id="sPromo" placeholder="เช่น ซื้อ 2 แพ็ก แถมดิน 1 กระสอบ ถึงสิ้นเดือนนี้"></textarea></div>
+        <div><label><input type="checkbox" id="sDisclose"> ให้ AI บอกลูกค้าตั้งแต่ประโยคแรกว่าเป็นผู้ช่วย AI</label>
+          <p class="muted small">ถ้าไม่ติ๊ก AI จะยังตอบตามจริงเมื่อลูกค้าถามว่าเป็นคนหรือ AI</p></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>เวลาและจำนวนการโทร</h2>
+      <div class="days" id="sDays" style="margin-bottom:12px"></div>
+      <div class="row">
+        <div><label>เริ่มโทร</label><input id="sStart" type="time"></div>
+        <div><label>เลิกโทร</label><input id="sEnd" type="time"></div>
+        <div><label>จำนวนสายต่อรอบ</label><input id="sPerRun" type="number" min="1"></div>
+      </div>
+      <div class="row">
+        <div><label>โทรซ้ำคนที่ไม่รับสาย สูงสุด (ครั้ง)</label><input id="sMaxAtt" type="number" min="1"></div>
+        <div><label>โทรซ้ำได้หลังจาก (ชั่วโมง)</label><input id="sRetry" type="number" min="0"></div>
+        <div><label>เว้นระหว่างสาย (วินาที)</label><input id="sGap" type="number" min="0"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>บัญชี Vapi</h2>
+      <p class="sub">หาค่าเหล่านี้ได้ที่ dashboard.vapi.ai ระบบเก็บไว้ในไฟล์ secrets.json บนเครื่องนี้เท่านั้น ไม่ขึ้น GitHub
+        ถ้าไม่ต้องการเปลี่ยนค่าเดิม ให้เว้นช่องว่างไว้</p>
+      <div class="row">
+        <div><label>API Key (Private) <span id="kKey"></span></label><input id="sKey" type="password" autocomplete="off"></div>
+        <div><label>Phone Number ID <span id="kPhone"></span></label><input id="sPhone" autocomplete="off"></div>
+        <div><label>Assistant ID <span id="kAsst"></span></label><input id="sAsst" autocomplete="off" placeholder="กด 'อัปเดตบทพูดให้ AI' จะได้มาเอง"></div>
+      </div>
+      <details>
+        <summary>ขั้นสูง: เสียงและโมเดล AI</summary>
+        <div class="row" style="margin-top:12px">
+          <div><label>ผู้ให้บริการเสียง</label><input id="aVoiceP"></div>
+          <div><label>รหัสเสียง</label><input id="aVoice"></div>
+          <div><label>ผู้ให้บริการฟังเสียง (STT)</label><input id="aSttP"></div>
+          <div><label>ภาษา</label><input id="aLang"></div>
+        </div>
+        <div class="row">
+          <div><label>ผู้ให้บริการโมเดล</label><input id="aModelP"></div>
+          <div><label>โมเดล</label><input id="aModel"></div>
+          <div><label>ความยาวสายสูงสุด (วินาที)</label><input id="aMaxDur" type="number" min="60"></div>
+        </div>
+        <p class="muted small">เปลี่ยนเสียงหรือโมเดลแล้ว ต้องกด "อัปเดตบทพูดให้ AI" ในแท็บสินค้าด้วย</p>
+      </details>
+    </div>
+    <button class="btn pri" id="saveSettings">บันทึกการตั้งค่า</button>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const DAYS = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."];
+let S = null;            // state ล่าสุดจาก server
+let custPage = 1, callPage = 1;
+
+function toast(msg, err = false) {
+  const t = $("toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.className = ""), err ? 6000 : 2500);
+}
+async function api(path, body, raw) {
+  const opt = body === undefined ? {} : { method: "POST", body: raw ? body : JSON.stringify(body),
+              headers: raw ? {} : { "Content-Type": "application/json" } };
+  const r = await fetch(path, opt);
+  const data = await r.json().catch(() => ({ error: "เซิร์ฟเวอร์ไม่ตอบ" }));
+  if (!r.ok) throw new Error(data.error || "ผิดพลาด");
+  return data;
+}
+async function busy(btn, fn) {
+  btn.disabled = true;
+  try { return await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; }
+}
+const fmt = (n) => Number(n || 0).toLocaleString("th-TH");
+const th = (iso) => iso ? new Date(iso).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-";
+const phoneTh = (p) => String(p || "").replace(/^\+66/, "0");
+
+// ---------- tabs ----------
+$("tabs").addEventListener("click", (e) => {
+  const t = e.target.dataset.t; if (!t) return;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  document.querySelectorAll("main section").forEach((s) => s.classList.toggle("on", s.id === t));
+  if (t === "customers") loadCustomers();
+  if (t === "results") loadCalls();
+});
+
+// ---------- state ----------
+async function loadState() {
+  S = await api("/api/state");
+  const st = S.stats.status, oc = S.stats.outcomes;
+  const total = Object.values(st).reduce((a, b) => a + b, 0);
+  const calls = Object.values(oc).reduce((a, b) => a + b, 0);
+  const talked = calls - (oc.no_answer || 0) - (oc["รอผล"] || 0);
+  const rate = talked > 0 ? ((oc.ordered || 0) / talked * 100).toFixed(1) + "%" : "-";
+  $("stats").innerHTML = [
+    ["ลูกค้าทั้งหมด", fmt(total)], ["ยังไม่โทร", fmt(st.new)], ["รอโทรซ้ำ", fmt(st.retry)],
+    ["โทรไปแล้ว", fmt(calls) + " สาย"], ["สั่งซื้อ", fmt(oc.ordered)], ["อัตราปิดการขาย", rate],
+    ["ค่าใช้จ่าย Vapi", "$" + Number(S.stats.cost || 0).toFixed(2)],
+  ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  $("hdrShop").textContent = S.shop.name || "";
+  const run = S.campaign.running;
+  $("hdrCampaign").textContent = run ? `กำลังโทรอัตโนมัติ (ทุก ${S.campaign.interval_mins} นาที)` : "หยุดอยู่";
+  $("hdrCampaign").className = "pill" + (run ? "" : " off");
+  $("openNow").textContent = S.open_now ? "✅ ตอนนี้อยู่ในเวลาโทรที่ตั้งไว้"
+    : `⏸ ตอนนี้อยู่นอกเวลาโทร (${S.calling.start}–${S.calling.end}) ระบบอัตโนมัติจะรอจนถึงเวลาโทร`;
+  $("cfgError").innerHTML = S.config_error ? `<div class="warnbox">⚠️ ${esc(S.config_error)}</div>` : "";
+
+  const ck = [
+    [S.secrets.VAPI_API_KEY, "ใส่ API Key ของ Vapi", "แท็บตั้งค่า"],
+    [S.secrets.VAPI_PHONE_NUMBER_ID, "ใส่ Phone Number ID (เบอร์โทรออก)", "แท็บตั้งค่า"],
+    [S.shop.name && S.shop.name !== "ร้านเกษตรของเรา", "ใส่ชื่อร้านจริง", "แท็บตั้งค่า"],
+    [S.products.length > 0, "ใส่สินค้าและราคาจริง", "แท็บสินค้า"],
+    [S.secrets.VAPI_ASSISTANT_ID, "กด 'อัปเดตบทพูดให้ AI'", "แท็บสินค้า"],
+    [total > 0, "นำเข้ารายชื่อลูกค้า", "แท็บลูกค้า"],
+  ];
+  $("checklist").innerHTML = ck.map(([ok, t, where]) =>
+    `<li><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "○"}</span><span>${t} <span class="muted small">— ${where}</span></span></li>`).join("");
+
+  if (!$("acInterval").matches(":focus")) $("acInterval").value = S.campaign.interval_mins;
+  fillSelect($("custStatus"), S.labels.status);
+  fillSelect($("callOutcome"), S.labels.outcome);
+}
+function fillSelect(sel, labels) {
+  if (sel.options.length > 1) return;
+  for (const [k, v] of Object.entries(labels)) sel.add(new Option(v, k));
+}
+async function loadLogs() {
+  const { lines } = await api("/api/logs");
+  const box = $("log"), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  box.textContent = lines.join("\n") || "ยังไม่มีบันทึก";
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+// ---------- ภาพรวม ----------
+$("tcBtn").onclick = (e) => busy(e.target, async () => {
+  await api("/api/test-call", { phone: $("tcPhone").value, name: $("tcName").value, last_purchase: $("tcLast").value });
+  toast("กำลังโทรไปหาเบอร์นี้ รอรับสายได้เลย"); loadLogs();
+});
+$("cnBtn").onclick = (e) => busy(e.target, async () => {
+  const n = +$("cnLimit").value || 10;
+  if (!confirm(`โทรหาลูกค้าจริง ${n} สายตอนนี้เลยไหม?`)) return;
+  const r = await api("/api/call-now", { limit: n });
+  toast(`โทรออก ${r.placed} สาย` + (r.errors.length ? `, ผิดพลาด ${r.errors.length}` : ""), !!r.errors.length && !r.placed);
+  loadState(); loadLogs();
+});
+$("pvBtn").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/preview");
+  $("preview").innerHTML = r.rows.length
+    ? `<p class="small muted" style="margin-top:14px">รอบถัดไปจะโทรหา ${r.rows.length} คนนี้:</p><div class="scroll"><table class="tbl"><tr><th>ชื่อ</th><th>เบอร์</th><th>ครั้งที่</th></tr>` +
+      r.rows.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(phoneTh(c.phone))}</td><td>${c.attempts + 1}</td></tr>`).join("") + "</table></div>"
+    : `<p class="muted" style="margin-top:14px">ไม่มีรายชื่อที่ถึงคิวโทรตอนนี้</p>`;
+});
+$("syncBtn").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/sync", {});
+  const n = Object.values(r.counts).reduce((a, b) => a + b, 0);
+  toast(n ? `ได้ผลใหม่ ${n} สาย` : "ยังไม่มีสายที่จบใหม่"); loadState();
+});
+$("acStart").onclick = (e) => busy(e.target, async () => {
+  if (!confirm("เริ่มให้ AI โทรหาลูกค้าอัตโนมัติไหม? (ต้องเปิดหน้าต่างโปรแกรมนี้ทิ้งไว้)")) return;
+  await api("/api/campaign/start", { interval_mins: +$("acInterval").value || 5 });
+  toast("เริ่มโทรอัตโนมัติแล้ว"); loadState(); setTimeout(loadLogs, 1500);
+});
+$("acStop").onclick = (e) => busy(e.target, async () => { await api("/api/campaign/stop", {}); toast("หยุดแล้ว"); loadState(); loadLogs(); });
+
+// ---------- สินค้า ----------
+function prodRow(p = {}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input data-f="sku" value="${esc(p.sku)}" style="min-width:90px"></td>
+    <td><input data-f="name" value="${esc(p.name)}" style="min-width:180px"></td>
+    <td><input data-f="price" type="number" min="0" step="any" value="${esc(p.price ?? "")}" style="width:90px"></td>
+    <td><input data-f="unit" value="${esc(p.unit ?? "ชิ้น")}" style="width:70px"></td>
+    <td><input data-f="min_qty" type="number" min="1" value="${esc(p.min_qty ?? 1)}" style="width:70px"></td>
+    <td><textarea data-f="details" style="min-width:220px">${esc(p.details)}</textarea></td>
+    <td style="text-align:center"><input data-f="featured" type="checkbox" ${p.featured ? "checked" : ""}></td>
+    <td><button class="btn bad" title="ลบ">✕</button></td>`;
+  tr.querySelector("button").onclick = () => tr.remove();
+  return tr;
+}
+function renderProducts() {
+  const tb = $("prodTbl").tBodies[0]; tb.innerHTML = "";
+  (S.products.length ? S.products : [{}]).forEach((p) => tb.append(prodRow(p)));
+}
+function readProducts() {
+  return [...$("prodTbl").tBodies[0].rows].map((tr) => {
+    const p = {};
+    tr.querySelectorAll("[data-f]").forEach((el) => {
+      const f = el.dataset.f;
+      p[f] = el.type === "checkbox" ? el.checked : (f === "price" || f === "min_qty") ? Number(el.value) : el.value.trim();
+    });
+    return p;
+  }).filter((p) => p.sku || p.name);
+}
+$("prodAdd").onclick = () => $("prodTbl").tBodies[0].append(prodRow());
+$("prodSave").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/products", { products: readProducts() });
+  toast(`บันทึกสินค้า ${r.count} รายการแล้ว — อย่าลืมกด 'อัปเดตบทพูดให้ AI'`); await loadState();
+});
+$("syncAsst").onclick = (e) => busy(e.target, async () => {
+  await api("/api/products", { products: readProducts() });
+  const r = await api("/api/sync-assistant", {});
+  toast(r.created ? "สร้าง AI บน Vapi แล้ว" : "อัปเดตบทพูดของ AI แล้ว"); loadState();
+});
+$("showPrompt").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/prompt");
+  $("promptBox").innerHTML = `<p style="margin-top:16px"><b>ประโยคแรก:</b> ${esc(r.first_message)}</p><pre class="prompt">${esc(r.system_prompt)}</pre>`;
+});
+
+// ---------- ลูกค้า ----------
+$("csvBtn").onclick = (e) => busy(e.target, async () => {
+  const f = $("csvFile").files[0]; if (!f) return toast("เลือกไฟล์ CSV ก่อน", true);
+  const r = await api("/api/import", await f.arrayBuffer(), true);
+  $("importResult").innerHTML = `<p style="margin-top:12px">นำเข้าใหม่ <b>${fmt(r.added)}</b> คน · อัปเดต ${fmt(r.updated)} · เบอร์ผิด ${fmt(r.invalid)}</p>` +
+    (r.invalid_rows.length ? `<details><summary>ดูแถวที่เบอร์ผิด</summary><pre class="prompt">${esc(r.invalid_rows.join("\n"))}</pre></details>` : "");
+  custPage = 1; loadCustomers(); loadState();
+});
+async function loadCustomers() {
+  const q = encodeURIComponent($("custQ").value), s = $("custStatus").value;
+  const r = await api(`/api/customers?q=${q}&status=${s}&page=${custPage}`);
+  $("custTotal").textContent = `(${fmt(r.total)} คน)`;
+  const L = S?.labels.status || {};
+  $("custTbl").tBodies[0].innerHTML = r.rows.map((c) => `<tr>
+    <td>${esc(c.name)}</td><td>${esc(phoneTh(c.phone))}</td><td class="small">${esc(c.last_purchase)}</td>
+    <td><span class="tag ${c.status}">${esc(L[c.status] || c.status)}</span></td><td>${c.attempts}</td>
+    <td>${c.status === "dnc"
+      ? `<button class="btn small" data-p="${esc(c.phone)}" data-d="0">ยกเลิกห้ามโทร</button>`
+      : `<button class="btn bad small" data-p="${esc(c.phone)}" data-d="1">ห้ามโทร</button>`}</td></tr>`).join("") ||
+    `<tr><td colspan="6" class="muted">ไม่มีรายชื่อ</td></tr>`;
+  pager($("custPager"), r.total, custPage, (p) => { custPage = p; loadCustomers(); });
+}
+$("custTbl").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-p]"); if (!b) return;
+  busy(b, async () => { await api("/api/dnc", { phone: b.dataset.p, dnc: b.dataset.d === "1" }); loadCustomers(); loadState(); });
+});
+$("custQ").addEventListener("keydown", (e) => { if (e.key === "Enter") { custPage = 1; loadCustomers(); } });
+$("custStatus").onchange = () => { custPage = 1; loadCustomers(); };
+function pager(el, total, page, go) {
+  const pages = Math.max(1, Math.ceil(total / 50));
+  el.innerHTML = pages < 2 ? "" : `<button class="btn" ${page <= 1 ? "disabled" : ""}>‹</button><span class="small">หน้า ${page} / ${pages}</span><button class="btn" ${page >= pages ? "disabled" : ""}>›</button>`;
+  const [prev, next] = el.querySelectorAll("button");
+  if (prev) { prev.onclick = () => go(page - 1); next.onclick = () => go(page + 1); }
+}
+
+// ---------- ผลการโทร ----------
+async function loadCalls() {
+  const r = await api(`/api/calls?outcome=${$("callOutcome").value}&page=${callPage}`);
+  $("callTotal").textContent = `(${fmt(r.total)} สาย)`;
+  const L = S?.labels.outcome || {};
+  $("callList").innerHTML = r.rows.map((c) => {
+    const d = c.data || {}, o = c.order;
+    const order = o ? `<div class="small" style="margin-top:6px"><b>ออเดอร์:</b> ${esc(o.lines.join(" · ") || "-")} · <b>รวม ${fmt(o.total)} บาท</b><br>
+        ที่อยู่: ${esc(d.address || "-")} · ผู้รับ: ${esc(d.recipient_name || "-")} · ${esc(d.payment_method || "")}
+        ${o.warnings.length ? `<div class="warnbox">ต้องตรวจสอบ: ${esc(o.warnings.join(", "))}</div>` : ""}</div>` : "";
+    return `<div class="call">
+      <div class="meta"><b>${esc(c.customer_name || "-")}</b><span class="muted">${esc(phoneTh(c.phone))}</span>
+        <span class="tag ${c.outcome || ""}">${esc(L[c.outcome || "รอผล"] || c.outcome)}</span>
+        <span class="muted small">${th(c.created_at)}</span>
+        ${c.recording_url ? `<a class="small" href="${esc(c.recording_url)}" target="_blank" rel="noopener">▶ ฟังเสียง</a>` : ""}</div>
+      ${c.summary ? `<div class="small" style="margin-top:4px">${esc(c.summary)}</div>` : ""}
+      ${d.callback_time ? `<div class="small">โทรกลับ: ${esc(d.callback_time)}</div>` : ""}
+      ${order}
+      ${c.transcript ? `<details><summary>บทสนทนา</summary><pre class="prompt">${esc(c.transcript)}</pre></details>` : ""}
+    </div>`;
+  }).join("") || `<p class="muted">ยังไม่มีการโทร</p>`;
+  pager($("callPager"), r.total, callPage, (p) => { callPage = p; loadCalls(); });
+}
+$("openFolder").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/open-folder", {});
+  $("folderPath").textContent = (r.ok ? "เปิดแล้ว: " : "ไฟล์อยู่ที่: ") + r.path + (r.ok ? "" : "/exports");
+});
+$("callOutcome").onchange = () => { callPage = 1; loadCalls(); };
+
+// ---------- ตั้งค่า ----------
+function renderSettings() {
+  const s = S.shop, c = S.calling, a = S.assistant;
+  $("sName").value = s.name || ""; $("sAgent").value = s.agent_name || "";
+  $("sPay").value = (s.payment_methods || []).join("\n"); $("sShip").value = s.shipping_note || "";
+  $("sPromo").value = s.promotion || ""; $("sDisclose").checked = s.disclose_ai !== false;
+  $("sDays").innerHTML = DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${(c.days || []).includes(i) ? "checked" : ""}> ${d}</label>`).join("");
+  $("sStart").value = c.start || "09:00"; $("sEnd").value = c.end || "19:00";
+  $("sPerRun").value = c.max_calls_per_run ?? 10; $("sMaxAtt").value = c.max_attempts ?? 3;
+  $("sRetry").value = c.retry_after_hours ?? 24; $("sGap").value = c.seconds_between_calls ?? 3;
+  const tag = (ok) => ok ? `<span class="tag done">ตั้งแล้ว</span>` : `<span class="tag callback">ยังไม่ได้ตั้ง</span>`;
+  $("kKey").innerHTML = tag(S.secrets.VAPI_API_KEY); $("kPhone").innerHTML = tag(S.secrets.VAPI_PHONE_NUMBER_ID);
+  $("kAsst").innerHTML = tag(S.secrets.VAPI_ASSISTANT_ID);
+  $("aVoiceP").value = a.voice_provider || ""; $("aVoice").value = a.voice_id || "";
+  $("aSttP").value = a.transcriber_provider || ""; $("aLang").value = a.language || "";
+  $("aModelP").value = a.model_provider || ""; $("aModel").value = a.model || "";
+  $("aMaxDur").value = a.max_duration_seconds ?? 480;
+}
+$("saveSettings").onclick = (e) => busy(e.target, async () => {
+  await api("/api/settings", {
+    shop: { name: $("sName").value.trim(), agent_name: $("sAgent").value.trim(),
+            payment_methods: $("sPay").value.split("\n").map((x) => x.trim()).filter(Boolean),
+            shipping_note: $("sShip").value.trim(), promotion: $("sPromo").value.trim(), disclose_ai: $("sDisclose").checked },
+    calling: { days: [...$("sDays").querySelectorAll("input:checked")].map((x) => +x.value),
+               start: $("sStart").value, end: $("sEnd").value, max_calls_per_run: +$("sPerRun").value,
+               max_attempts: +$("sMaxAtt").value, retry_after_hours: +$("sRetry").value, seconds_between_calls: +$("sGap").value },
+    assistant: { voice_provider: $("aVoiceP").value.trim(), voice_id: $("aVoice").value.trim(),
+                 transcriber_provider: $("aSttP").value.trim(), language: $("aLang").value.trim(),
+                 model_provider: $("aModelP").value.trim(), model: $("aModel").value.trim(), max_duration_seconds: +$("aMaxDur").value },
+    secrets: { VAPI_API_KEY: $("sKey").value, VAPI_PHONE_NUMBER_ID: $("sPhone").value, VAPI_ASSISTANT_ID: $("sAsst").value },
+  });
+  ["sKey", "sPhone", "sAsst"].forEach((id) => ($(id).value = ""));
+  toast("บันทึกแล้ว — ถ้าแก้ชื่อร้าน โปรโมชัน หรือเสียง ให้กด 'อัปเดตบทพูดให้ AI' ในแท็บสินค้าด้วย");
+  await loadState(); renderSettings();
+});
+
+// ---------- start ----------
+(async () => {
+  try { await loadState(); renderProducts(); renderSettings(); loadLogs(); }
+  catch (e) { toast(e.message, true); }
+  setInterval(() => { loadState().catch(() => {}); loadLogs().catch(() => {}); }, 10000);
+})();
+</script>
+</body>
+</html>

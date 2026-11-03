@@ -1,0 +1,35 @@
+{
+  "shop": {
+    "name": "ร้านเกษตรของเรา",
+    "agent_name": "น้องฝน",
+    "disclose_ai": true,
+    "payment_methods": ["เก็บเงินปลายทาง", "โอนเงิน"],
+    "shipping_note": "ค่าส่ง 50 บาท ส่งฟรีเมื่อซื้อครบ 500 บาท ได้ของภายใน 2-4 วัน",
+    "promotion": ""
+  },
+  "calling": {
+    "timezone": "Asia/Bangkok",
+    "days": [0, 1, 2, 3, 4, 5],
+    "start": "09:00",
+    "end": "19:00",
+    "max_calls_per_run": 10,
+    "seconds_between_calls": 3,
+    "max_attempts": 3,
+    "retry_after_hours": 24
+  },
+  "vapi": {
+    "api_key": "env:VAPI_API_KEY",
+    "phone_number_id": "env:VAPI_PHONE_NUMBER_ID",
+    "assistant_id": "env:VAPI_ASSISTANT_ID"
+  },
+  "assistant": {
+    "model_provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "temperature": 0.5,
+    "voice_provider": "azure",
+    "voice_id": "th-TH-PremwadeeNeural",
+    "transcriber_provider": "azure",
+    "language": "th-TH",
+    "max_duration_seconds": 480
+  }
+}
