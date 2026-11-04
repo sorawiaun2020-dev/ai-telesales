@@ -139,6 +139,17 @@ def structured_data_schema() -> dict[str, Any]:
     }
 
 
+def build_voice(a: dict[str, Any]) -> dict[str, Any]:
+    voice: dict[str, Any] = {"provider": a.get("voice_provider") or "azure",
+                             "voiceId": a.get("voice_id") or "th-TH-PremwadeeNeural"}
+    # รุ่นของเสียง (เช่น ElevenLabs) — รุ่นที่ Vapi เลือกให้เองอาจพูดไทยไม่ได้ จึงให้ระบุเองได้
+    if str(a.get("voice_model") or "").strip():
+        voice["model"] = str(a["voice_model"]).strip()
+    if str(a.get("voice_language") or "").strip():
+        voice["language"] = str(a["voice_language"]).strip()
+    return voice
+
+
 def build_assistant_payload(cfg: Config) -> dict[str, Any]:
     a = cfg.assistant
     return {
@@ -151,7 +162,7 @@ def build_assistant_payload(cfg: Config) -> dict[str, Any]:
             "temperature": a.get("temperature", 0.5),
             "messages": [{"role": "system", "content": build_system_prompt(cfg)}],
         },
-        "voice": {"provider": a.get("voice_provider", "azure"), "voiceId": a.get("voice_id", "th-TH-PremwadeeNeural")},
+        "voice": build_voice(a),
         "transcriber": {"provider": a.get("transcriber_provider", "azure"), "language": a.get("language", "th-TH")},
         "maxDurationSeconds": int(a.get("max_duration_seconds", 480)),
         "endCallFunctionEnabled": True,

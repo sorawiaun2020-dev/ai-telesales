@@ -75,6 +75,11 @@ class TestConfigAndPrompt(unittest.TestCase):
         payload = build_assistant_payload(cfg)
         self.assertIn("{{customer_name}}", payload["firstMessage"])
         self.assertEqual(payload["voice"]["voiceId"], "th-TH-PremwadeeNeural")
+        self.assertNotIn("model", payload["voice"])
+        cfg.assistant.update(voice_provider="11labs", voice_id="abc", voice_model="eleven_multilingual_v2",
+                             voice_language="th")
+        self.assertEqual(build_assistant_payload(cfg)["voice"], {
+            "provider": "11labs", "voiceId": "abc", "model": "eleven_multilingual_v2", "language": "th"})
         json.dumps(payload)  # ต้องแปลงเป็น JSON ได้
 
 

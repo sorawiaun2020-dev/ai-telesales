@@ -283,6 +283,10 @@
         <div class="row" style="margin-top:12px">
           <div><label>ผู้ให้บริการเสียง</label><input id="aVoiceP"></div>
           <div><label>รหัสเสียง</label><input id="aVoice"></div>
+          <div><label>รุ่นของเสียง (เว้นว่าง = ให้ Vapi เลือก)</label><input id="aVoiceM" list="voiceModels" placeholder="เช่น eleven_multilingual_v2">
+            <datalist id="voiceModels"><option value="eleven_multilingual_v2"><option value="eleven_turbo_v2_5">
+              <option value="eleven_flash_v2_5"><option value="eleven_v3"></datalist></div>
+          <div><label>ภาษาของเสียง (เช่น th)</label><input id="aVoiceL" placeholder="th"></div>
           <div><label>ผู้ให้บริการฟังเสียง (STT)</label><input id="aSttP"></div>
           <div><label>ภาษา</label><input id="aLang"></div>
         </div>
@@ -549,6 +553,7 @@ function renderSettings() {
   $("kKey").innerHTML = tag(S.secrets.VAPI_API_KEY); $("kPhone").innerHTML = tag(S.secrets.VAPI_PHONE_NUMBER_ID);
   $("kAsst").innerHTML = tag(S.secrets.VAPI_ASSISTANT_ID);
   $("aVoiceP").value = a.voice_provider || ""; $("aVoice").value = a.voice_id || "";
+  $("aVoiceM").value = a.voice_model || ""; $("aVoiceL").value = a.voice_language || "";
   $("aSttP").value = a.transcriber_provider || ""; $("aLang").value = a.language || "";
   $("aModelP").value = a.model_provider || ""; $("aModel").value = a.model || "";
   $("aMaxDur").value = a.max_duration_seconds ?? 480;
@@ -562,6 +567,7 @@ $("saveSettings").onclick = (e) => busy(e.target, async () => {
                start: $("sStart").value, end: $("sEnd").value, max_calls_per_run: +$("sPerRun").value,
                max_attempts: +$("sMaxAtt").value, retry_after_hours: +$("sRetry").value, seconds_between_calls: +$("sGap").value },
     assistant: { voice_provider: $("aVoiceP").value.trim(), voice_id: $("aVoice").value.trim(),
+                 voice_model: $("aVoiceM").value.trim(), voice_language: $("aVoiceL").value.trim(),
                  transcriber_provider: $("aSttP").value.trim(), language: $("aLang").value.trim(),
                  model_provider: $("aModelP").value.trim(), model: $("aModel").value.trim(), max_duration_seconds: +$("aMaxDur").value },
     secrets: { VAPI_API_KEY: $("sKey").value, VAPI_PHONE_NUMBER_ID: $("sPhone").value, VAPI_ASSISTANT_ID: $("sAsst").value },

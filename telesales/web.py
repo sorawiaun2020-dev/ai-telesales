@@ -39,6 +39,7 @@ TEMPLATE_NAME = "รายชื่อลูกค้า-ตัวอย่า�
 _SHOP_FIELDS = ("name", "agent_name", "disclose_ai", "payment_methods", "shipping_note", "promotion")
 _CALLING_FIELDS = tuple(Calling.__dataclass_fields__)
 _ASSISTANT_FIELDS = ("model_provider", "model", "temperature", "voice_provider", "voice_id",
+                     "voice_model", "voice_language",
                      "transcriber_provider", "language", "max_duration_seconds")
 
 
