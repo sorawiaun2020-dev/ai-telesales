@@ -153,6 +153,34 @@ class TestCampaign(unittest.TestCase):
         self.assertEqual(self.db.customer("+66811111111")["attempts"], 0)
 
 
+class TestVapiClient(unittest.TestCase):
+    def test_sends_user_agent(self):
+        # Cloudflare ของ Vapi ตอบ 403 (error 1010) ถ้าใช้ User-Agent ค่าเริ่มต้นของ urllib
+        from unittest import mock
+        from telesales import vapi
+
+        seen = {}
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b'{"id": "a1"}'
+
+        def fake_urlopen(req, timeout):
+            seen.update({k.lower(): v for k, v in req.header_items()})
+            return Resp()
+
+        with mock.patch.object(vapi.urllib.request, "urlopen", fake_urlopen):
+            self.assertEqual(vapi.VapiClient("k").create_assistant({})["id"], "a1")
+        self.assertNotIn("python-urllib", seen["user-agent"].lower())
+        self.assertEqual(seen["authorization"], "Bearer k")
+
+
 class TestClassifyAndPricing(unittest.TestCase):
     def test_classify(self):
         self.assertEqual(classify({"endedReason": "voicemail"})[0], "no_answer")

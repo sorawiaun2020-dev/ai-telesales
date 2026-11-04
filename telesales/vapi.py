@@ -7,6 +7,9 @@ import urllib.request
 from typing import Any
 
 BASE_URL = "https://api.vapi.ai"
+# Cloudflare หน้า api.vapi.ai บล็อก User-Agent ค่าเริ่มต้นของ urllib ("Python-urllib/x.y")
+# ด้วย error code 1010 จึงต้องระบุชื่อโปรแกรมเอง
+USER_AGENT = "AI-Telesales/1.0 (+https://github.com/sorawiaun2020-dev/ai-telesales)"
 
 
 class VapiError(Exception):
@@ -27,7 +30,12 @@ class VapiClient:
             self.base_url + path,
             data=data,
             method=method,
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
