@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from . import xlsx
 from .phone import normalize_th
 
 # สถานะลูกค้า
@@ -41,7 +42,9 @@ CREATE TABLE IF NOT EXISTS calls (
     data_json     TEXT,
     recording_url TEXT,
     transcript    TEXT,
-    cost          REAL
+    cost          REAL,
+    is_test       INTEGER NOT NULL DEFAULT 0,  -- สายทดสอบ: ไม่นับในสถิติ/ไฟล์ออเดอร์ และไม่เปลี่ยนสถานะลูกค้า
+    name          TEXT NOT NULL DEFAULT ''     -- ชื่อที่ให้ AI เรียก (ใช้กับสายทดสอบที่ไม่มีในรายชื่อลูกค้า)
 );
 CREATE INDEX IF NOT EXISTS idx_calls_phone ON calls(phone);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
@@ -73,6 +76,16 @@ class DB:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """เพิ่มคอลัมน์ใหม่ให้ฐานข้อมูลที่สร้างจากโปรแกรมรุ่นก่อน (ข้อมูลเดิมไม่หาย)."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(calls)")}
+        with self.conn:
+            if "is_test" not in cols:
+                self.conn.execute("ALTER TABLE calls ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0")
+            if "name" not in cols:
+                self.conn.execute("ALTER TABLE calls ADD COLUMN name TEXT NOT NULL DEFAULT ''")
 
     def close(self) -> None:
         self.conn.close()
@@ -80,7 +93,13 @@ class DB:
     # ---------- นำเข้ารายชื่อ ----------
     def import_csv(self, path: str, now: datetime | None = None) -> ImportResult:
         with open(path, "rb") as f:
-            return self.import_csv_bytes(f.read(), now)
+            return self.import_file_bytes(f.read(), now)
+
+    def import_file_bytes(self, raw: bytes, now: datetime | None = None) -> ImportResult:
+        """รับได้ทั้งไฟล์ Excel (.xlsx) และ CSV."""
+        if xlsx.is_xlsx(raw):
+            return self.import_rows(xlsx.read_rows(raw), now)
+        return self.import_csv_bytes(raw, now)
 
     def import_csv_bytes(self, raw: bytes, now: datetime | None = None) -> ImportResult:
         # Excel บน Windows ไทย "Save as CSV" แบบธรรมดาจะได้ไฟล์ TIS-620 (cp874) ไม่ใช่ UTF-8
@@ -132,12 +151,16 @@ class DB:
         return self.conn.execute("SELECT * FROM customers WHERE phone = ?", (phone,)).fetchone()
 
     # ---------- บันทึกการโทร ----------
-    def record_call_started(self, call_id: str, phone: str, now: datetime | None = None) -> None:
+    def record_call_started(self, call_id: str, phone: str, now: datetime | None = None, *,
+                            test: bool = False, name: str = "") -> None:
         ts = _now_iso(now)
         with self.conn:
             self.conn.execute(
-                "INSERT OR IGNORE INTO calls (id, phone, created_at) VALUES (?, ?, ?)", (call_id, phone, ts)
+                "INSERT OR IGNORE INTO calls (id, phone, created_at, is_test, name) VALUES (?, ?, ?, ?, ?)",
+                (call_id, phone, ts, int(test), name),
             )
+            if test:
+                return
             self.conn.execute(
                 "UPDATE customers SET status = ?, attempts = attempts + 1, last_call_at = ? WHERE phone = ?",
                 (CALLING, ts, phone),
@@ -159,13 +182,18 @@ class DB:
                  recording_url, transcript, cost, call_id),
             )
             if customer_status:
-                row = self.conn.execute("SELECT phone FROM calls WHERE id = ?", (call_id,)).fetchone()
-                if row:
+                row = self.conn.execute("SELECT phone, is_test FROM calls WHERE id = ?", (call_id,)).fetchone()
+                if row and not row["is_test"]:
                     # DNC ทับทุกอย่าง ไม่ถูกเปลี่ยนกลับ
                     self.conn.execute(
                         "UPDATE customers SET status = ? WHERE phone = ? AND status != ?",
                         (customer_status, row["phone"], DNC),
                     )
+
+    def add_customer(self, name: str, phone: str, last_purchase: str = "", note: str = "",
+                     now: datetime | None = None) -> ImportResult:
+        """เพิ่มลูกค้าทีละคน (จากหน้าโปรแกรม)."""
+        return self.import_rows([{"name": name, "phone": phone, "last_purchase": last_purchase, "note": note}], now)
 
     def set_status(self, phone: str, status: str) -> bool:
         with self.conn:
@@ -195,7 +223,7 @@ class DB:
         cond, args = ("WHERE calls.outcome = ?", [outcome]) if outcome else ("", [])
         total = self.conn.execute(f"SELECT COUNT(*) FROM calls {cond}", args).fetchone()[0]
         rows = self.conn.execute(
-            f"""SELECT calls.*, customers.name AS customer_name FROM calls
+            f"""SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name FROM calls
                 LEFT JOIN customers ON customers.phone = calls.phone {cond}
                 ORDER BY calls.created_at DESC LIMIT ? OFFSET ?""",
             args + [limit, offset],
@@ -209,7 +237,7 @@ class DB:
 
     def outcome_counts(self) -> dict[str, int]:
         rows = self.conn.execute(
-            "SELECT COALESCE(outcome, 'รอผล') AS o, COUNT(*) AS n FROM calls GROUP BY o"
+            "SELECT COALESCE(outcome, 'รอผล') AS o, COUNT(*) AS n FROM calls WHERE is_test = 0 GROUP BY o"
         ).fetchall()
         return {r["o"]: r["n"] for r in rows}
 
@@ -220,7 +248,7 @@ class DB:
         return self.conn.execute(
             """SELECT calls.*, customers.name AS customer_name FROM calls
                LEFT JOIN customers ON customers.phone = calls.phone
-               WHERE calls.outcome = ? ORDER BY calls.created_at""",
+               WHERE calls.outcome = ? AND calls.is_test = 0 ORDER BY calls.created_at""",
             (outcome,),
         ).fetchall()
 

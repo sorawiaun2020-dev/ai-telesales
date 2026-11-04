@@ -27,11 +27,14 @@ from .export import OUTCOME_TH, STATUS_TH, export_all, price_order
 from .phone import normalize_th
 from .prompt import build_assistant_payload, build_first_message, build_system_prompt
 from .vapi import VapiClient, VapiError
+from .xlsx import XlsxError, customer_template
 
 log = logging.getLogger("telesales")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 MAX_UPLOAD = 50 * 1024 * 1024  # รายชื่อหลายหมื่นแถวยังเล็กกว่านี้มาก
+RESULT_SYNC_SECONDS = 20        # ดึงผลสายที่ค้างอยู่ (รวมสายทดสอบ) อัตโนมัติทุกกี่วินาที
+TEMPLATE_NAME = "รายชื่อลูกค้า-ตัวอย่าง.xlsx"
 
 _SHOP_FIELDS = ("name", "agent_name", "disclose_ai", "payment_methods", "shipping_note", "promotion")
 _CALLING_FIELDS = tuple(Calling.__dataclass_fields__)
@@ -122,6 +125,31 @@ class App:
         log.addHandler(self.logs)
         self.campaign = Campaign(self.paths)
         self._file_lock = threading.Lock()
+        self._closing = threading.Event()
+        threading.Thread(target=self._sync_loop, name="result-sync", daemon=True).start()
+
+    def close(self) -> None:
+        self._closing.set()
+        self.campaign.stop()
+
+    def _sync_loop(self) -> None:
+        """ดึงผลของสายที่ยังไม่มีผลทุก ๆ ไม่กี่วินาที — ทั้งสายทดสอบและสายจริง แม้ไม่ได้เปิดโทรอัตโนมัติ."""
+        while not self._closing.wait(RESULT_SYNC_SECONDS):
+            try:
+                db = self.db()
+                try:
+                    if not db.pending_calls():
+                        continue
+                    cfg = self.cfg()
+                    if not cfg.vapi_api_key:
+                        continue
+                    counts = sync_results(db, VapiClient(cfg.vapi_api_key), cfg.calling.max_attempts)
+                finally:
+                    db.close()
+                if counts:
+                    log.info("ได้ผลการโทรใหม่ %d สาย — ดูได้ที่แท็บผลการโทร", sum(counts.values()))
+            except Exception:  # noqa: BLE001 — ห้ามให้ thread ตาย
+                log.debug("ดึงผลอัตโนมัติไม่สำเร็จ", exc_info=True)
 
     # ---------- helpers ----------
     def cfg(self) -> Config:
@@ -239,12 +267,38 @@ class App:
     def import_customers(self, raw: bytes) -> dict:
         db = self.db()
         try:
-            res = db.import_csv_bytes(raw)
+            res = db.import_file_bytes(raw)
+        except XlsxError as e:
+            raise ConfigError(str(e)) from e
         finally:
             db.close()
         log.info("นำเข้ารายชื่อ: ใหม่ %d, อัปเดต %d, เบอร์ผิด %d", res.added, res.updated, res.invalid)
         return {"added": res.added, "updated": res.updated, "invalid": res.invalid,
                 "invalid_rows": res.invalid_rows[:50]}
+
+    def add_customer(self, body: dict) -> dict:
+        db = self.db()
+        try:
+            res = db.add_customer(str(body.get("name") or "").strip(), str(body.get("phone") or ""),
+                                  str(body.get("last_purchase") or "").strip(), str(body.get("note") or "").strip())
+        finally:
+            db.close()
+        if res.invalid:
+            raise ConfigError("เบอร์โทรไม่ถูกต้อง")
+        log.info("เพิ่มลูกค้า %s แล้ว", body.get("name") or body.get("phone"))
+        return {"added": res.added, "updated": res.updated}
+
+    def open_template(self) -> dict:
+        """สร้างไฟล์ Excel ตัวอย่างไว้ในโฟลเดอร์ข้อมูล แล้วเปิดด้วย Excel (Windows)."""
+        folder = os.path.dirname(os.path.abspath(self.paths.config))
+        path = os.path.join(folder, TEMPLATE_NAME)
+        if not os.path.exists(path):  # ไม่เขียนทับไฟล์ที่ผู้ใช้กรอกรายชื่อไว้แล้ว
+            with open(path, "wb") as f:
+                f.write(customer_template())
+        if not hasattr(os, "startfile"):
+            return {"ok": False, "path": path}
+        os.startfile(path)  # noqa: S606
+        return {"ok": True, "path": path}
 
     def customers(self, q: str, status: str, page: int) -> dict:
         db = self.db()
@@ -309,7 +363,13 @@ class App:
             name=name, variables=call_variables({"name": name, "last_purchase": body.get("last_purchase") or "",
                                                  "note": "สายทดสอบ"}),
         )
-        log.info("โทรทดสอบหา %s แล้ว", phone)
+        if res.get("id"):
+            db = self.db()
+            try:
+                db.record_call_started(res["id"], phone, test=True, name=name)
+            finally:
+                db.close()
+        log.info("โทรทดสอบหา %s แล้ว — ผลจะขึ้นในแท็บผลการโทรหลังวางสายประมาณ 1 นาที", phone)
         return {"ok": True, "call_id": res.get("id")}
 
     def call_now(self, body: dict) -> dict:
@@ -433,6 +493,10 @@ def make_handler(app: App):
                 if route == ("GET", "/"):
                     with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                         return self._send(200, f.read(), "text/html; charset=utf-8")
+                if route == ("GET", "/export/customers-template.xlsx"):
+                    return self._send(200, customer_template(),
+                                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                      {"Content-Disposition": "attachment; filename=\"customers-template.xlsx\""})
                 if method == "GET" and url.path in ("/export/orders.csv", "/export/callbacks.csv"):
                     name = url.path.rsplit("/", 1)[1]
                     with open(app.export_file(name), "rb") as f:
@@ -450,6 +514,8 @@ def make_handler(app: App):
                     ("POST", "/api/products"): lambda: app.save_products(self._json_body()),
                     ("POST", "/api/sync-assistant"): lambda: app.sync_assistant(),
                     ("POST", "/api/import"): lambda: app.import_customers(self._body()),
+                    ("POST", "/api/customers/add"): lambda: app.add_customer(self._json_body()),
+                    ("POST", "/api/open-template"): lambda: app.open_template(),
                     ("POST", "/api/dnc"): lambda: app.set_dnc(self._json_body()),
                     ("POST", "/api/test-call"): lambda: app.test_call(self._json_body()),
                     ("POST", "/api/call-now"): lambda: app.call_now(self._json_body()),
@@ -497,6 +563,6 @@ def serve(base: str, host: str = "127.0.0.1", port: int = 8080, password: str = 
     except KeyboardInterrupt:
         pass
     finally:
-        app.campaign.stop()
+        app.close()
         httpd.server_close()
         time.sleep(0.1)

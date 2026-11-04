@@ -75,6 +75,8 @@
            padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; z-index: 10; }
   #toast.show { opacity: 1; } #toast.err { background: var(--bad); color: #fff; }
   .days label { display: inline-flex; gap: 4px; align-items: center; margin-right: 12px; color: var(--ink); font-size: 14px; }
+  ol.steps { padding-left: 20px; margin: 0 0 8px; } ol.steps li { margin-bottom: 14px; }
+  .tag.test { background: var(--brand-soft); color: var(--brand); border: 1px dashed var(--brand); }
   .pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 </style>
 </head>
@@ -169,15 +171,32 @@
   <!-- ลูกค้า -->
   <section id="customers">
     <div class="card">
-      <h2>นำเข้ารายชื่อลูกค้า</h2>
-      <p class="sub">ใน Excel กด <b>Save As → CSV UTF-8</b> (หรือ CSV ธรรมดาก็ได้)
-        คอลัมน์ต้องมี <b>ชื่อ</b> และ <b>เบอร์โทร</b> ส่วน <b>สินค้าที่เคยซื้อ</b> กับ <b>หมายเหตุ</b> ใส่หรือไม่ใส่ก็ได้
-        นำเข้าไฟล์เดิมซ้ำได้ ระบบไม่สร้างรายชื่อซ้ำ และไม่รีเซ็ตคนที่โทรไปแล้ว</p>
-      <div class="btns">
-        <input type="file" id="csvFile" accept=".csv,text/csv" style="max-width:320px">
-        <button class="btn pri" id="csvBtn">นำเข้า</button>
-      </div>
+      <h2>นำเข้ารายชื่อลูกค้าจากไฟล์ Excel</h2>
+      <ol class="steps">
+        <li><b>เปิดไฟล์ตัวอย่าง</b> แล้วพิมพ์หรือวางรายชื่อลูกค้าแทนตัวอย่าง (คอลัมน์ <b>ชื่อ</b> และ <b>เบอร์โทร</b> ต้องมี
+          ส่วน <b>สินค้าที่เคยซื้อ</b> กับ <b>หมายเหตุ</b> ใส่หรือไม่ใส่ก็ได้) แล้วกดบันทึกใน Excel
+          <div class="btns" style="margin-top:8px">
+            <button class="btn" id="tplBtn">📄 เปิดไฟล์ Excel ตัวอย่าง</button>
+            <a class="btn" href="/export/customers-template.xlsx">⬇ ดาวน์โหลดไฟล์ตัวอย่าง</a>
+          </div>
+          <p class="muted small" id="tplPath"></p></li>
+        <li><b>เลือกไฟล์ที่กรอกเสร็จแล้ว</b> ระบบจะนำเข้าให้ทันที (ใช้ได้ทั้ง .xlsx และ .csv)
+          <div style="margin-top:8px">
+            <label class="btn pri" for="csvFile" style="display:inline-block;color:var(--brand-ink);margin:0">📂 เลือกไฟล์รายชื่อลูกค้า</label>
+            <input type="file" id="csvFile" accept=".xlsx,.csv" style="display:none">
+          </div></li>
+      </ol>
+      <p class="muted small">นำเข้าไฟล์เดิมซ้ำได้ ระบบไม่สร้างรายชื่อซ้ำ และไม่โทรซ้ำหาคนที่โทรไปแล้ว</p>
       <div id="importResult"></div>
+    </div>
+    <div class="card">
+      <h2>เพิ่มลูกค้าทีละคน</h2>
+      <div class="row">
+        <div><label>ชื่อ</label><input id="acName"></div>
+        <div><label>เบอร์โทร</label><input id="acPhone" placeholder="08x-xxx-xxxx" inputmode="tel"></div>
+        <div><label>สินค้าที่เคยซื้อ</label><input id="acLast"></div>
+      </div>
+      <button class="btn pri" id="acBtn">+ เพิ่มลูกค้า</button>
     </div>
     <div class="card">
       <h2>รายชื่อลูกค้า <span class="muted small" id="custTotal"></span></h2>
@@ -367,7 +386,7 @@ async function loadLogs() {
 // ---------- ภาพรวม ----------
 $("tcBtn").onclick = (e) => busy(e.target, async () => {
   await api("/api/test-call", { phone: $("tcPhone").value, name: $("tcName").value, last_purchase: $("tcLast").value });
-  toast("กำลังโทรไปหาเบอร์นี้ รอรับสายได้เลย"); loadLogs();
+  toast("กำลังโทรไปหาเบอร์นี้ รอรับสายได้เลย — วางสายแล้วประมาณ 1 นาที ผลจะขึ้นในแท็บผลการโทร"); loadLogs();
 });
 $("cnBtn").onclick = (e) => busy(e.target, async () => {
   const n = +$("cnLimit").value || 10;
@@ -440,9 +459,21 @@ $("showPrompt").onclick = (e) => busy(e.target, async () => {
 });
 
 // ---------- ลูกค้า ----------
-$("csvBtn").onclick = (e) => busy(e.target, async () => {
-  const f = $("csvFile").files[0]; if (!f) return toast("เลือกไฟล์ CSV ก่อน", true);
-  const r = await api("/api/import", await f.arrayBuffer(), true);
+$("tplBtn").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/open-template", {});
+  $("tplPath").textContent = r.ok ? `เปิดใน Excel แล้ว (ไฟล์อยู่ที่ ${r.path})` : `ไฟล์อยู่ที่ ${r.path}`;
+});
+$("acBtn").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/customers/add", { name: $("acName").value, phone: $("acPhone").value, last_purchase: $("acLast").value });
+  toast(r.added ? "เพิ่มลูกค้าแล้ว" : "มีเบอร์นี้อยู่แล้ว — อัปเดตข้อมูลให้แล้ว");
+  ["acName", "acPhone", "acLast"].forEach((id) => ($(id).value = ""));
+  custPage = 1; loadCustomers(); loadState();
+});
+$("csvFile").onchange = (e) => busy(document.querySelector('label[for="csvFile"]'), async () => {
+  const f = e.target.files[0]; if (!f) return;
+  e.target.value = "";  // เลือกไฟล์เดิมซ้ำได้
+  $("importResult").innerHTML = `<p class="muted">กำลังนำเข้า ${esc(f.name)} ...</p>`;
+  const r = await api("/api/import", await f.arrayBuffer(), true).catch((err) => { $("importResult").innerHTML = ""; throw err; });
   $("importResult").innerHTML = `<p style="margin-top:12px">นำเข้าใหม่ <b>${fmt(r.added)}</b> คน · อัปเดต ${fmt(r.updated)} · เบอร์ผิด ${fmt(r.invalid)}</p>` +
     (r.invalid_rows.length ? `<details><summary>ดูแถวที่เบอร์ผิด</summary><pre class="prompt">${esc(r.invalid_rows.join("\n"))}</pre></details>` : "");
   custPage = 1; loadCustomers(); loadState();
@@ -487,6 +518,7 @@ async function loadCalls() {
     return `<div class="call">
       <div class="meta"><b>${esc(c.customer_name || "-")}</b><span class="muted">${esc(phoneTh(c.phone))}</span>
         <span class="tag ${c.outcome || ""}">${esc(L[c.outcome || "รอผล"] || c.outcome)}</span>
+        ${c.is_test ? `<span class="tag test">สายทดสอบ</span>` : ""}
         <span class="muted small">${th(c.created_at)}</span>
         ${c.recording_url ? `<a class="small" href="${esc(c.recording_url)}" target="_blank" rel="noopener">▶ ฟังเสียง</a>` : ""}</div>
       ${c.summary ? `<div class="small" style="margin-top:4px">${esc(c.summary)}</div>` : ""}
@@ -543,7 +575,11 @@ $("saveSettings").onclick = (e) => busy(e.target, async () => {
 (async () => {
   try { await loadState(); renderProducts(); renderSettings(); loadLogs(); }
   catch (e) { toast(e.message, true); }
-  setInterval(() => { loadState().catch(() => {}); loadLogs().catch(() => {}); }, 10000);
+  setInterval(() => {
+    loadState().catch(() => {}); loadLogs().catch(() => {});
+    // แท็บผลการโทรเปิดอยู่ -> รีเฟรชให้เห็นผลใหม่เอง (ยกเว้นตอนกำลังอ่านบทสนทนา)
+    if ($("results").classList.contains("on") && !document.querySelector("#callList details[open]")) loadCalls().catch(() => {});
+  }, 10000);
 })();
 </script>
 </body>

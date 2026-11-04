@@ -38,6 +38,7 @@ class TestDashboard(unittest.TestCase):
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def tearDown(self):
+        self.app.close()
         self.httpd.shutdown()
         self.httpd.server_close()
         web.log.removeHandler(self.app.logs)
@@ -54,7 +55,9 @@ class TestDashboard(unittest.TestCase):
             with urllib.request.urlopen(r) as resp:
                 ctype = resp.headers.get("Content-Type", "")
                 payload = resp.read()
-                return resp.status, (json.loads(payload) if "json" in ctype else payload.decode("utf-8-sig"))
+                if "json" in ctype:
+                    return resp.status, json.loads(payload)
+                return resp.status, (payload.decode("utf-8-sig") if ctype.startswith("text/") else payload)
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
@@ -124,7 +127,60 @@ class TestDashboard(unittest.TestCase):
         code, r = self.req("/api/test-call", {"phone": "0812345678"})
         self.assertEqual(code, 400)
 
+    def test_excel_template_import_and_add_customer(self):
+        from telesales import xlsx
+        code, _ = self.req("/export/customers-template.xlsx")
+        self.assertEqual(code, 200)
+        # ไฟล์ที่ผู้ใช้กรอกใน Excel: เบอร์ถูกเก็บเป็นตัวเลข (0 หน้าหาย) ก็ต้องนำเข้าได้
+        raw = xlsx.write([["ชื่อ", "เบอร์โทร", "สินค้าที่เคยซื้อ"], ["ป้าแดง", "0898765432", "ดิน"]])
+        raw = raw.replace(b't="inlineStr" s="2"><is><t xml:space="preserve">0898765432</t></is>',
+                          b'><v>898765432</v>')
+        code, r = self.req("/api/import", raw=raw)
+        self.assertEqual((code, r["added"]), (200, 1))
+        code, r = self.req("/api/customers/add", {"name": "ลุงมี", "phone": "081 111 2222"})
+        self.assertEqual((code, r["added"]), (200, 1))
+        self.assertEqual(self.req("/api/customers/add", {"name": "x", "phone": "12"})[0], 400)
+        _, c = self.req("/api/customers")
+        self.assertEqual(sorted(x["name"] for x in c["rows"]), ["ป้าแดง", "ลุงมี"])
+        self.assertEqual(self.req("/api/import", raw=b"PK\x03\x04 broken")[0], 400)
+
+    def test_test_call_is_recorded_but_not_counted(self):
+        from unittest import mock
+
+        class FakeClient:
+            calls = {}
+
+            def __init__(self, key):
+                pass
+
+            def create_call(self, **kw):
+                self.calls["t1"] = {"id": "t1", "status": "ended", "endedReason": "customer-ended-call",
+                                    "analysis": {"summary": "ทดสอบสั่งซื้อ", "structuredData": {
+                                        "outcome": "ordered", "items": [{"sku": "BAG-12", "qty": 10}]}}}
+                return {"id": "t1"}
+
+            def get_call(self, cid):
+                return self.calls[cid]
+
+        self.req("/api/settings", {"secrets": {"VAPI_API_KEY": "k", "VAPI_PHONE_NUMBER_ID": "p",
+                                               "VAPI_ASSISTANT_ID": "a"}})
+        with mock.patch.object(web, "VapiClient", FakeClient):
+            code, r = self.req("/api/test-call", {"phone": "0812345678", "name": "สมชาย"})
+            self.assertEqual((code, r["call_id"]), (200, "t1"))
+            self.assertEqual(self.req("/api/sync", {})[1]["counts"], {"ordered": 1})
+        _, calls = self.req("/api/calls")
+        row = calls["rows"][0]
+        self.assertEqual((row["is_test"], row["customer_name"], row["outcome"]), (1, "สมชาย", "ordered"))
+        self.assertEqual(row["order"]["total"], 150)
+        _, st = self.req("/api/state")
+        self.assertEqual(st["stats"]["outcomes"], {})      # สายทดสอบไม่นับในสถิติ
+        _, c = self.req("/api/customers")
+        self.assertEqual(c["total"], 0)                    # และไม่ถูกเพิ่มเป็นลูกค้า
+        code, csv_out = self.req("/export/orders.csv")
+        self.assertNotIn("สมชาย", csv_out)                 # ไม่อยู่ในไฟล์ออเดอร์จริง
+
     def test_password(self):
+        self.app.close()
         self.httpd.shutdown()
         self.httpd.server_close()
         web.log.removeHandler(self.app.logs)

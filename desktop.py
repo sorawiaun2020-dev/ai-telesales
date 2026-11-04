@@ -113,7 +113,7 @@ def main() -> None:
     try:
         open_window(url, home)
     finally:
-        app.campaign.stop()
+        app.close()
         httpd.shutdown()
 
 

@@ -153,6 +153,28 @@ class TestCampaign(unittest.TestCase):
         self.assertEqual(self.db.customer("+66811111111")["attempts"], 0)
 
 
+class TestXlsx(unittest.TestCase):
+    def test_roundtrip_and_migration(self):
+        from telesales import xlsx
+        rows = xlsx.read_rows(xlsx.customer_template())
+        self.assertEqual(rows[0]["ชื่อ"], "สมชาย ใจดี")
+        self.assertEqual(rows[0]["เบอร์โทร"], "081-234-5678")
+        # ฐานข้อมูลจากโปรแกรมรุ่นก่อน (ไม่มีคอลัมน์ is_test) ต้องเปิดได้และข้อมูลไม่หาย
+        import sqlite3
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "old.db")
+            con = sqlite3.connect(path)
+            con.executescript("CREATE TABLE calls (id TEXT PRIMARY KEY, phone TEXT NOT NULL, created_at TEXT NOT NULL,"
+                              " status TEXT NOT NULL DEFAULT 'queued', ended_reason TEXT, outcome TEXT, summary TEXT,"
+                              " data_json TEXT, recording_url TEXT, transcript TEXT, cost REAL);"
+                              "INSERT INTO calls (id, phone, created_at, outcome) VALUES ('c', '+66811111111', 'x', 'ordered');")
+            con.commit()
+            con.close()
+            db = dbm.DB(path)
+            self.assertEqual(db.outcome_counts(), {"ordered": 1})
+            db.close()
+
+
 class TestVapiClient(unittest.TestCase):
     def test_sends_user_agent(self):
         # Cloudflare ของ Vapi ตอบ 403 (error 1010) ถ้าใช้ User-Agent ค่าเริ่มต้นของ urllib
