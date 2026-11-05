@@ -58,6 +58,7 @@
   .head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
   .grid2 { display: grid; gap: 18px; grid-template-columns: 2fr 1fr; }
   .grid2e { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  .tokbar { position: sticky; top: 74px; z-index: 2; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
   .scriptGrid { display: grid; gap: 18px; grid-template-columns: 1fr 340px; align-items: start; }
   .kpis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 18px; }
   .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
@@ -376,6 +377,12 @@
           <div id="scWarn"></div>
           <div class="scriptGrid">
             <div>
+              <div class="tokbar">
+                <div class="small strong" style="margin-bottom:6px">➕ แทรกข้อมูล: คลิกในช่องที่จะพิมพ์ แล้วกดปุ่ม</div>
+                <div class="btns"><span class="muted small">ร้าน/สินค้า:</span><span class="btns" id="tokShop"></span></div>
+                <div class="btns" style="margin-top:6px"><span class="muted small">ลูกค้า:</span><span class="btns" id="tokCust"></span>
+                  <span class="muted small" style="margin-left:6px">ประโยคแรก:</span><span class="btns" id="tokFirst"></span></div>
+              </div>
               <label>ประโยคแรก (AI พูดทันทีที่ลูกค้ารับสาย)</label>
               <textarea id="scFirst" style="min-height:60px"></textarea>
               <label style="margin-top:14px">บทพูดและวิธีขาย (คำสั่งที่ AI ใช้ตลอดสาย)</label>
@@ -385,15 +392,14 @@
                 <pre class="prompt" id="scFixed"></pre></details>
               <div id="scPreviewBox"></div>
             </div>
-            <div class="card" style="margin:0;box-shadow:none;position:sticky;top:90px">
+            <div class="card" style="margin:0;box-shadow:none">
               <h2>📖 คู่มือ</h2>
-              <p class="small" style="margin:6px 0 10px"><b>คลิกปุ่มด้านล่างเพื่อแทรกข้อมูล</b> ตรงตำแหน่งที่เคอร์เซอร์อยู่ ระบบจะเติมค่าจริงให้เอง</p>
-              <div class="small strong">ข้อมูลร้าน (จากหน้าตั้งค่า/สินค้า)</div>
-              <div class="btns" id="tokShop" style="margin:6px 0 12px"></div>
-              <div class="small strong">ข้อมูลลูกค้า (เติมตอนโทรแต่ละสาย)</div>
-              <div class="btns" id="tokCust" style="margin:6px 0 12px"></div>
-              <div class="small strong">ใช้ในประโยคแรก</div>
-              <div class="btns" id="tokFirst" style="margin:6px 0 14px"></div>
+              <p class="small" style="margin:6px 0 10px">ใช้<b>แถบ "แทรกข้อมูล"</b> เหนือช่องพิมพ์ เพื่อใส่ข้อมูลที่ระบบเติมค่าจริงให้เอง:</p>
+              <ul class="small" style="padding-left:18px;margin:0 0 12px;color:var(--ink2)">
+                <li><b>ร้าน/สินค้า</b> ดึงจากหน้าตั้งค่าและหน้าสินค้า</li>
+                <li><b>ลูกค้า</b> เติมตอนโทรแต่ละสาย จากรายชื่อลูกค้า</li>
+                <li>ชี้เมาส์ที่ปุ่มเพื่อดูว่าแต่ละอันคืออะไร</li>
+              </ul>
               <div class="small strong">เคล็ดลับการเขียน</div>
               <ul class="small" style="padding-left:18px;margin:6px 0 0;color:var(--ink2)">
                 <li>เขียนเหมือนสอนพนักงานใหม่ บอกเป็นข้อ ๆ ว่าต้องทำอะไรก่อนหลัง</li>
