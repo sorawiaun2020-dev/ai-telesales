@@ -11,3 +11,4 @@ __pycache__/
 build/
 dist/
 *.spec
+telesales/static/version.txt

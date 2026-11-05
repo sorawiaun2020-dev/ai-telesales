@@ -567,6 +567,7 @@ function refreshPage() {
 // ---------- state (settings, campaign) ----------
 async function loadState() {
   S = await api("/api/state");
+  $("sideFoot").textContent = `รุ่น ${S.version} · อัปเดตอัตโนมัติทุก 10 วินาที`;
   $("sideShop").textContent = S.shop.name || "";
   const run = S.campaign.running;
   $("hdrCampaign").className = "pill" + (run ? " on" : "");

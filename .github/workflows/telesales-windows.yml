@@ -31,6 +31,9 @@ jobs:
       - name: รันชุดทดสอบ
         run: python -m unittest discover -s tests
 
+      - name: ใส่เลขรุ่น (แสดงมุมซ้ายล่างของโปรแกรม)
+        run: python -c "open('telesales/static/version.txt', 'w').write('${{ github.run_number }}')"
+
       - name: สร้าง AI-Telesales.exe
         run: >
           pyinstaller desktop.py --onefile --windowed --noconfirm --name AI-Telesales

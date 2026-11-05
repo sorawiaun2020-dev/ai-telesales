@@ -34,6 +34,15 @@ from .xlsx import XlsxError, customer_template
 log = logging.getLogger("telesales")
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def app_version() -> str:
+    """เลขรุ่นที่ GitHub ใส่ตอนสร้าง .exe (ตรงกับเลขรุ่นในหน้าดาวน์โหลด); รันจากโค้ด = dev."""
+    try:
+        with open(os.path.join(STATIC_DIR, "version.txt"), encoding="utf-8") as f:
+            return f.read().strip() or "dev"
+    except OSError:
+        return "dev"
 MAX_UPLOAD = 50 * 1024 * 1024  # รายชื่อหลายหมื่นแถวยังเล็กกว่านี้มาก
 RESULT_SYNC_SECONDS = 20        # ดึงผลสายที่ค้างอยู่ (รวมสายทดสอบ) อัตโนมัติทุกกี่วินาที
 TEMPLATE_NAME = "รายชื่อลูกค้า-ตัวอย่าง.xlsx"
@@ -195,6 +204,7 @@ class App:
             "campaign": {"running": self.campaign.running, "interval_mins": self.campaign.interval_mins,
                          "last_run": self.campaign.last_run},
             "open_now": open_now,
+            "version": app_version(),
             "config_error": cfg_error,
         }
 
