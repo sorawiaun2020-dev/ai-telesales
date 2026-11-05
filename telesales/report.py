@@ -8,7 +8,7 @@ from typing import Any
 from . import db as dbm
 from . import xlsx
 from .config import Config
-from .export import OUTCOME_TH, STATUS_TH, price_order
+from .export import OUTCOME_TH, STATUS_TH, delivery, price_order
 
 ORDER_STATUS_TH = {"": "รอยืนยัน", "confirmed": "ยืนยันแล้ว", "shipped": "ส่งแล้ว", "cancelled": "ยกเลิก"}
 _NOT_TALKED = ("no_answer", "unknown", None)
@@ -118,13 +118,13 @@ def customer_row(cfg: Config, r) -> dict[str, Any]:
 
 
 def customers_xlsx(cfg: Config, db: dbm.DB) -> bytes:
-    rows = [["ชื่อ", "เบอร์โทร", "สถานะ", "ผลการโทรล่าสุด", "สินค้าที่สั่ง", "ยอดเงิน (บาท)", "สถานะออเดอร์",
+    rows = [["ชื่อ", "เบอร์โทร", "ที่อยู่", "สถานะ", "ผลการโทรล่าสุด", "สินค้าที่สั่ง", "ยอดเงิน (บาท)", "สถานะออเดอร์",
              "โทรแล้ว (ครั้ง)", "โทรล่าสุด", "เวลาที่สะดวกให้โทรกลับ", "สรุปสาย", "เคยซื้อ", "หมายเหตุ"]]
     for r in db.all_customers_with_last_call():
         c = customer_row(cfg, r)
         o = c["order"]
         rows.append([
-            c["name"], "0" + c["phone"][3:] if c["phone"].startswith("+66") else c["phone"],
+            c["name"], "0" + c["phone"][3:] if c["phone"].startswith("+66") else c["phone"], c.get("address") or "",
             STATUS_TH.get(c["status"], c["status"]),
             OUTCOME_TH.get(c["last_outcome"] or "", "") if c["last_outcome"] else "",
             " | ".join(o["lines"]) if o else "", f"{o['total']:.0f}" if o else "",
@@ -132,7 +132,7 @@ def customers_xlsx(cfg: Config, db: dbm.DB) -> bytes:
             str(c["attempts"]), _fmt_time(c["last_call_at"], cfg), c["callback_time"],
             c["last_summary"] or "", c["last_purchase"], c["note"],
         ])
-    return xlsx.write(rows, widths=[22, 14, 14, 18, 40, 14, 14, 12, 18, 22, 60, 28, 28])
+    return xlsx.write(rows, widths=[22, 14, 40, 14, 18, 40, 14, 14, 12, 18, 22, 60, 28, 28])
 
 
 def orders_xlsx(cfg: Config, db: dbm.DB) -> bytes:
@@ -141,12 +141,13 @@ def orders_xlsx(cfg: Config, db: dbm.DB) -> bytes:
     for r in db.calls_with_outcome("ordered"):
         data = json.loads(r["data_json"] or "{}")
         o = order_of(cfg, data)
-        warnings = list(o["warnings"]) + ([] if data.get("address") else ["ไม่มีที่อยู่"])
+        dv = delivery(data, r)
+        warnings = list(o["warnings"]) + ([] if dv["address"] else ["ไม่มีที่อยู่"])
         rows.append([
             _fmt_time(r["created_at"], cfg), r["customer_name"] or "", "0" + r["phone"][3:],
             " | ".join(o["lines"]), f"{o['total']:.0f}", "ใช่" if o["has_upsell"] else "",
-            ORDER_STATUS_TH.get(r["order_status"] or "", ""), data.get("recipient_name", ""),
-            data.get("address", ""), data.get("contact_phone", ""), data.get("payment_method", ""),
+            ORDER_STATUS_TH.get(r["order_status"] or "", ""), dv["recipient"],
+            dv["address"], dv["contact_phone"], data.get("payment_method", ""),
             "; ".join(warnings), r["summary"] or "", r["recording_url"] or "",
         ])
     return xlsx.write(rows, widths=[18, 22, 14, 44, 14, 10, 14, 22, 50, 16, 18, 30, 60, 40], sheet_name="ออเดอร์")

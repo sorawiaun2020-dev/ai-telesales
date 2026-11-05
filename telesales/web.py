@@ -282,7 +282,8 @@ class App:
         db = self.db()
         try:
             res = db.add_customer(str(body.get("name") or "").strip(), str(body.get("phone") or ""),
-                                  str(body.get("last_purchase") or "").strip(), str(body.get("note") or "").strip())
+                                  str(body.get("last_purchase") or "").strip(), str(body.get("note") or "").strip(),
+                                  str(body.get("address") or "").strip())
         finally:
             db.close()
         if res.invalid:
@@ -370,6 +371,7 @@ class App:
             d["data"] = data
             if d["outcome"] == "ordered":
                 d["order"] = report.order_of(cfg, data)
+                d["delivery"] = report.delivery(data, r)
             out.append(d)
         return {"total": total, "rows": out}
 
@@ -393,15 +395,16 @@ class App:
         if not cfg.vapi_phone_number_id:
             raise ConfigError("ยังไม่ได้ใส่ Phone Number ID ในแท็บตั้งค่า")
         name = str(body.get("name") or "ทดสอบ")
+        address = str(body.get("address") or "").strip()
         res = VapiClient(cfg.vapi_api_key).create_call(
             assistant_id=cfg.vapi_assistant_id, phone_number_id=cfg.vapi_phone_number_id, number=phone,
             name=name, variables=call_variables({"name": name, "last_purchase": body.get("last_purchase") or "",
-                                                 "note": "สายทดสอบ"}),
+                                                 "note": "สายทดสอบ", "address": address}),
         )
         if res.get("id"):
             db = self.db()
             try:
-                db.record_call_started(res["id"], phone, test=True, name=name)
+                db.record_call_started(res["id"], phone, test=True, name=name, address=address)
             finally:
                 db.close()
         log.info("โทรทดสอบหา %s แล้ว — ผลจะขึ้นในแท็บผลการโทรหลังวางสายประมาณ 1 นาที", phone)

@@ -51,6 +51,30 @@ def price_order(cfg: Config, items: list[dict]) -> tuple[list[str], float, list[
     return lines, total, warnings
 
 
+def delivery(data: dict, row) -> dict[str, str]:
+    """ผู้รับ/ที่อยู่/เบอร์ของออเดอร์: ที่อยู่ใหม่ที่ลูกค้าบอก หรือที่อยู่เดิมเมื่อลูกค้ายืนยัน "ส่งที่เดิม"."""
+    def col(k: str) -> str:
+        try:
+            return str(row[k] or "")
+        except (KeyError, IndexError):
+            return ""
+    new_addr = str(data.get("address") or "").strip()
+    old_addr = (col("address") or col("customer_address")).strip()  # สายจากโปรแกรมรุ่นก่อนไม่มีสำเนาที่อยู่
+    if new_addr:
+        address, source = new_addr, "ที่อยู่ใหม่"
+    elif old_addr and data.get("use_existing_address") is not False:
+        address, source = old_addr, "ที่อยู่เดิม"
+    else:
+        address, source = "", ""
+    phone = col("phone")
+    return {
+        "recipient": str(data.get("recipient_name") or "").strip() or col("customer_name"),
+        "address": address,
+        "address_source": source,
+        "contact_phone": str(data.get("contact_phone") or "").strip() or ("0" + phone[3:] if phone.startswith("+66") else phone),
+    }
+
+
 def export_orders(cfg: Config, db: dbm.DB, path: str) -> int:
     rows = db.calls_with_outcome("ordered")
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
@@ -60,10 +84,11 @@ def export_orders(cfg: Config, db: dbm.DB, path: str) -> int:
         for r in rows:
             data = json.loads(r["data_json"] or "{}")
             lines, total, warnings = price_order(cfg, data.get("items") or [])
-            if not data.get("address"):
+            dv = delivery(data, r)
+            if not dv["address"]:
                 warnings.append("ไม่มีที่อยู่")
             w.writerow([r["created_at"], r["customer_name"], r["phone"], " | ".join(lines), f"{total:.0f}",
-                        data.get("recipient_name", ""), data.get("address", ""), data.get("contact_phone", ""),
+                        dv["recipient"], dv["address"], dv["contact_phone"],
                         data.get("payment_method", ""), "; ".join(warnings), r["summary"] or "",
                         r["recording_url"] or ""])
     return len(rows)

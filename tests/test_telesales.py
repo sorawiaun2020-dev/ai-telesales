@@ -179,8 +179,17 @@ class TestXlsx(unittest.TestCase):
                               "INSERT INTO calls (id, phone, created_at, outcome) VALUES ('c', '+66811111111', 'x', 'ordered');")
             con.commit()
             con.close()
+            con = sqlite3.connect(path)
+            con.executescript("CREATE TABLE customers (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',"
+                              " last_purchase TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',"
+                              " status TEXT NOT NULL DEFAULT 'new', attempts INTEGER NOT NULL DEFAULT 0,"
+                              " last_call_at TEXT, imported_at TEXT NOT NULL);"
+                              "INSERT INTO customers (phone, name, imported_at) VALUES ('+66811111111', 'เก่า', 'x');")
+            con.commit()
+            con.close()
             db = dbm.DB(path)
             self.assertEqual(db.outcome_counts(), {"ordered": 1})
+            self.assertEqual(db.customer("+66811111111")["address"], "")
             db.close()
 
 

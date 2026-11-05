@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS customers (
     phone         TEXT PRIMARY KEY,
     name          TEXT NOT NULL DEFAULT '',
     last_purchase TEXT NOT NULL DEFAULT '',
+    address       TEXT NOT NULL DEFAULT '',
     note          TEXT NOT NULL DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'new',
     attempts      INTEGER NOT NULL DEFAULT 0,
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS calls (
     cost          REAL,
     is_test       INTEGER NOT NULL DEFAULT 0,  -- สายทดสอบ: ไม่นับในสถิติ/ไฟล์ออเดอร์ และไม่เปลี่ยนสถานะลูกค้า
     name          TEXT NOT NULL DEFAULT '',    -- ชื่อที่ให้ AI เรียก (ใช้กับสายทดสอบที่ไม่มีในรายชื่อลูกค้า)
-    order_status  TEXT NOT NULL DEFAULT ''     -- ออเดอร์: '' = รอยืนยัน, confirmed, shipped, cancelled
+    order_status  TEXT NOT NULL DEFAULT '',    -- ออเดอร์: '' = รอยืนยัน, confirmed, shipped, cancelled
+    address       TEXT NOT NULL DEFAULT ''     -- ที่อยู่เดิมของลูกค้า ณ ตอนโทร (ใช้เมื่อลูกค้ายืนยัน "ส่งที่เดิม")
 );
 CREATE INDEX IF NOT EXISTS idx_calls_phone ON calls(phone);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
@@ -57,6 +59,7 @@ _COLS = {
     "phone": ("phone", "tel", "mobile", "เบอร์", "เบอร์โทร", "เบอร์โทรศัพท์", "โทรศัพท์"),
     "last_purchase": ("last_purchase", "สินค้าที่เคยซื้อ", "เคยซื้อ", "สินค้า"),
     "note": ("note", "หมายเหตุ"),
+    "address": ("address", "ที่อยู่", "ที่อยู่จัดส่ง", "ที่อยู่ลูกค้า"),
 }
 
 
@@ -82,7 +85,12 @@ class DB:
     def _migrate(self) -> None:
         """เพิ่มคอลัมน์ใหม่ให้ฐานข้อมูลที่สร้างจากโปรแกรมรุ่นก่อน (ข้อมูลเดิมไม่หาย)."""
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(calls)")}
+        ccols = {r["name"] for r in self.conn.execute("PRAGMA table_info(customers)")}
         with self.conn:
+            if "address" not in ccols:
+                self.conn.execute("ALTER TABLE customers ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+            if "address" not in cols:
+                self.conn.execute("ALTER TABLE calls ADD COLUMN address TEXT NOT NULL DEFAULT ''")
             if "is_test" not in cols:
                 self.conn.execute("ALTER TABLE calls ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0")
             if "name" not in cols:
@@ -123,16 +131,19 @@ class DB:
                     res.invalid += 1
                     res.invalid_rows.append(f"แถว {line_no}: เบอร์ไม่ถูกต้อง {rec['phone']!r}")
                     continue
+                # ไฟล์ที่ไม่มีคอลัมน์ที่อยู่ ต้องไม่ลบที่อยู่เดิมทิ้ง
                 cur = self.conn.execute(
-                    "UPDATE customers SET name = ?, last_purchase = ?, note = ? WHERE phone = ?",
-                    (rec["name"], rec["last_purchase"], rec["note"], phone),
+                    """UPDATE customers SET name = ?, last_purchase = ?, note = ?,
+                           address = CASE WHEN ? != '' THEN ? ELSE address END WHERE phone = ?""",
+                    (rec["name"], rec["last_purchase"], rec["note"], rec["address"], rec["address"], phone),
                 )
                 if cur.rowcount:
                     res.updated += 1  # อัปเดตข้อมูลแต่ไม่รีเซ็ตสถานะ (กันโทรซ้ำ / โทรหาคนที่ขอไม่ให้โทร)
                     continue
                 self.conn.execute(
-                    "INSERT INTO customers (phone, name, last_purchase, note, imported_at) VALUES (?, ?, ?, ?, ?)",
-                    (phone, rec["name"], rec["last_purchase"], rec["note"], ts),
+                    """INSERT INTO customers (phone, name, last_purchase, note, address, imported_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (phone, rec["name"], rec["last_purchase"], rec["note"], rec["address"], ts),
                 )
                 res.added += 1
         return res
@@ -155,12 +166,16 @@ class DB:
 
     # ---------- บันทึกการโทร ----------
     def record_call_started(self, call_id: str, phone: str, now: datetime | None = None, *,
-                            test: bool = False, name: str = "") -> None:
+                            test: bool = False, name: str = "", address: str | None = None) -> None:
         ts = _now_iso(now)
+        if address is None:
+            row = self.customer(phone)
+            address = row["address"] if row else ""
         with self.conn:
             self.conn.execute(
-                "INSERT OR IGNORE INTO calls (id, phone, created_at, is_test, name) VALUES (?, ?, ?, ?, ?)",
-                (call_id, phone, ts, int(test), name),
+                """INSERT OR IGNORE INTO calls (id, phone, created_at, is_test, name, address)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (call_id, phone, ts, int(test), name, address),
             )
             if test:
                 return
@@ -176,7 +191,8 @@ class DB:
 
     def live_calls(self) -> list[sqlite3.Row]:
         return self.conn.execute(
-            """SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name FROM calls
+            """SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name,
+                   customers.address AS customer_address FROM calls
                LEFT JOIN customers ON customers.phone = calls.phone
                WHERE calls.status != 'ended' ORDER BY calls.created_at DESC LIMIT 50"""
         ).fetchall()
@@ -217,10 +233,11 @@ class DB:
                         (customer_status, row["phone"], DNC),
                     )
 
-    def add_customer(self, name: str, phone: str, last_purchase: str = "", note: str = "",
+    def add_customer(self, name: str, phone: str, last_purchase: str = "", note: str = "", address: str = "",
                      now: datetime | None = None) -> ImportResult:
         """เพิ่มลูกค้าทีละคน (จากหน้าโปรแกรม)."""
-        return self.import_rows([{"name": name, "phone": phone, "last_purchase": last_purchase, "note": note}], now)
+        return self.import_rows([{"name": name, "phone": phone, "last_purchase": last_purchase, "note": note,
+                                  "address": address}], now)
 
     def set_status(self, phone: str, status: str) -> bool:
         with self.conn:
@@ -267,7 +284,8 @@ class DB:
         cond, args = ("WHERE calls.outcome = ?", [outcome]) if outcome else ("", [])
         total = self.conn.execute(f"SELECT COUNT(*) FROM calls {cond}", args).fetchone()[0]
         rows = self.conn.execute(
-            f"""SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name FROM calls
+            f"""SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name,
+                   customers.address AS customer_address FROM calls
                 LEFT JOIN customers ON customers.phone = calls.phone {cond}
                 ORDER BY calls.created_at DESC LIMIT ? OFFSET ?""",
             args + [limit, offset],
@@ -290,7 +308,7 @@ class DB:
 
     def calls_with_outcome(self, outcome: str) -> list[sqlite3.Row]:
         return self.conn.execute(
-            """SELECT calls.*, customers.name AS customer_name FROM calls
+            """SELECT calls.*, customers.name AS customer_name, customers.address AS customer_address FROM calls
                LEFT JOIN customers ON customers.phone = calls.phone
                WHERE calls.outcome = ? AND calls.is_test = 0 ORDER BY calls.created_at""",
             (outcome,),

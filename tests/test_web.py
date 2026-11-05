@@ -234,6 +234,44 @@ class TestDashboard(unittest.TestCase):
         self.assertIn("[C] สำรอง", p["system_prompt"].split("สินค้าสำรอง")[1])
         self.assertEqual(self.req("/api/products", {"products": [{"sku": "A", "name": "x", "price": 1, "role": "vip"}]})[0], 400)
 
+    def test_existing_address_is_confirmed_not_asked(self):
+        from unittest import mock
+        from telesales import xlsx
+        raw = xlsx.write([["ชื่อ", "เบอร์โทร", "ที่อยู่"], ["ป้าแดง", "0898765432", "9 ม.1 ต.ก อ.ข จ.ค 10000"]])
+        self.assertEqual(self.req("/api/import", raw=raw)[1]["added"], 1)
+        # นำเข้าไฟล์ที่ไม่มีคอลัมน์ที่อยู่ซ้ำ ต้องไม่ลบที่อยู่เดิม
+        self.req("/api/import", raw=xlsx.write([["ชื่อ", "เบอร์โทร"], ["ป้าแดง", "0898765432"]]))
+        _, c = self.req("/api/customers")
+        self.assertEqual(c["rows"][0]["address"], "9 ม.1 ต.ก อ.ข จ.ค 10000")
+
+        sent = {}
+
+        class FakeClient:
+            def __init__(self, key):
+                pass
+
+            def create_call(self, **kw):
+                sent.update(kw["variables"])
+                return {"id": "t1"}
+
+            def get_call(self, cid):
+                return {"id": cid, "status": "ended", "analysis": {"structuredData": {
+                    "outcome": "ordered", "use_existing_address": True, "items": [{"sku": "SOIL-25", "qty": 1}]}}}
+
+        self.req("/api/settings", {"secrets": {"VAPI_API_KEY": "k", "VAPI_PHONE_NUMBER_ID": "p",
+                                               "VAPI_ASSISTANT_ID": "a"}})
+        with mock.patch.object(web, "VapiClient", FakeClient):
+            self.req("/api/test-call", {"phone": "0812345678", "name": "สมชาย", "address": "1 ถ.สุข จ.ลำปาง"})
+            self.req("/api/sync", {})
+        self.assertEqual(sent["address"], "1 ถ.สุข จ.ลำปาง")
+        _, calls = self.req("/api/calls")
+        dv = calls["rows"][0]["delivery"]
+        self.assertEqual((dv["address"], dv["address_source"], dv["recipient"], dv["contact_phone"]),
+                         ("1 ถ.สุข จ.ลำปาง", "ที่อยู่เดิม", "สมชาย", "0812345678"))
+        _, p = self.req("/api/prompt")
+        self.assertIn("{{address}}", p["system_prompt"])
+        self.assertIn("ห้ามขอให้ลูกค้าบอกที่อยู่ใหม่", p["system_prompt"])
+
     def test_password(self):
         self.app.close()
         self.httpd.shutdown()

@@ -37,10 +37,16 @@ class RunReport:
 
 
 def call_variables(customer) -> dict[str, str]:
+    def field(k: str) -> str:
+        try:
+            return str(customer[k] or "").strip()
+        except (KeyError, IndexError):
+            return ""
     return {
-        "customer_name": customer["name"] or "ลูกค้า",
-        "last_purchase": customer["last_purchase"] or "ไม่มีข้อมูล",
-        "note": customer["note"] or "-",
+        "customer_name": field("name") or "ลูกค้า",
+        "last_purchase": field("last_purchase") or "ไม่มีข้อมูล",
+        "note": field("note") or "-",
+        "address": field("address") or "-",
     }
 
 

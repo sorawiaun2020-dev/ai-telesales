@@ -227,6 +227,8 @@
               <div><label>ชื่อที่ให้ AI เรียก</label><input id="tcName" value="สมชาย"></div>
             </div>
             <div class="row"><div><label>สินค้าที่เคยซื้อ (สมมติ)</label><input id="tcLast" value="ถุงปลูกผัก 12 นิ้ว 50 ใบ"></div></div>
+            <div class="row"><div><label>ที่อยู่เดิม (สมมติ — เว้นว่างเพื่อทดสอบแบบที่ AI ต้องถามที่อยู่)</label>
+              <input id="tcAddr" value="99/1 ม.4 ต.บ้านใหม่ อ.เมือง จ.นครปฐม 73000"></div></div>
             <button class="btn pri" id="tcBtn">📞 โทรทดสอบ</button>
           </div>
           <div class="card">
@@ -269,7 +271,8 @@
               <div class="card" style="margin:0;box-shadow:none">
                 <h2>นำเข้าจากไฟล์ Excel</h2>
                 <ol class="steps">
-                  <li><b>เปิดไฟล์ตัวอย่าง</b> แล้วใส่รายชื่อ (ต้องมีคอลัมน์ <b>ชื่อ</b> และ <b>เบอร์โทร</b>) แล้วกดบันทึก
+                  <li><b>เปิดไฟล์ตัวอย่าง</b> แล้วใส่รายชื่อ (ต้องมีคอลัมน์ <b>ชื่อ</b> และ <b>เบอร์โทร</b> แนะนำให้ใส่ <b>ที่อยู่</b> ด้วย
+                    AI จะได้ถามแค่ "ส่งที่เดิมใช่ไหมคะ") แล้วกดบันทึก
                     <div class="btns" style="margin-top:8px"><button class="btn sm" id="tplBtn">📄 เปิดไฟล์ตัวอย่าง</button>
                       <a class="btn sm" href="/export/customers-template.xlsx">⬇ ดาวน์โหลดไฟล์ตัวอย่าง</a></div>
                     <p class="muted small" id="tplPath"></p></li>
@@ -282,6 +285,7 @@
               <div class="card" style="margin:0;box-shadow:none">
                 <h2>เพิ่มทีละคน</h2>
                 <div class="row"><div><label>ชื่อ</label><input id="acName"></div><div><label>เบอร์โทร</label><input id="acPhone" placeholder="08x-xxx-xxxx" inputmode="tel"></div></div>
+                <div class="row"><div><label>ที่อยู่ (ใช้ยืนยันตอนสั่งซื้อ ไม่ต้องให้ลูกค้าพูดใหม่)</label><input id="acAddr"></div></div>
                 <div class="row"><div><label>สินค้าที่เคยซื้อ</label><input id="acLast"></div></div>
                 <button class="btn pri" id="acBtn">+ เพิ่มลูกค้า</button>
               </div>
@@ -620,7 +624,7 @@ function niceStep(raw) {
 
 // ---------- controls ----------
 $("tcBtn").onclick = (e) => busy(e.target, async () => {
-  await api("/api/test-call", { phone: $("tcPhone").value, name: $("tcName").value, last_purchase: $("tcLast").value });
+  await api("/api/test-call", { phone: $("tcPhone").value, name: $("tcName").value, last_purchase: $("tcLast").value, address: $("tcAddr").value });
   toast("กำลังโทรไปหาเบอร์นี้ — วางสายแล้วประมาณ 1 นาที ผลจะขึ้นในหน้าผลการโทร"); loadDashboard();
 });
 $("cnBtn").onclick = (e) => busy(e.target, async () => {
@@ -672,7 +676,8 @@ async function loadCustomers() {
     const changed = seenCustomers[c.phone] && seenCustomers[c.phone] !== key;
     const o = c.order;
     return `<tr class="${changed ? "flash" : ""}">
-      <td><div class="strong">${esc(c.name || "-")}</div><div class="muted small">${esc(phoneTh(c.phone))}</div></td>
+      <td><div class="strong">${esc(c.name || "-")}</div><div class="muted small">${esc(phoneTh(c.phone))}</div>
+        ${c.address ? `<div class="muted small" style="max-width:220px" title="${esc(c.address)}">📍 ${esc(c.address)}</div>` : ""}</td>
       <td>${chip(STATUS[c.status] || ["", "", c.status])}</td>
       <td>${c.call_id ? (c.last_outcome ? outcomeChip(c.last_outcome) : `<span class="chip good"><i>◉</i>${esc(LIVE[c.last_call_status] || "รอผล")}</span>`) : `<span class="muted">–</span>`}
         ${c.callback_time ? `<div class="muted small">โทรกลับ: ${esc(c.callback_time)}</div>` : ""}
@@ -698,9 +703,9 @@ $("tplBtn").onclick = (e) => busy(e.target, async () => {
   $("tplPath").textContent = r.ok ? `เปิดใน Excel แล้ว (ไฟล์อยู่ที่ ${r.path})` : `ไฟล์อยู่ที่ ${r.path}`;
 });
 $("acBtn").onclick = (e) => busy(e.target, async () => {
-  const r = await api("/api/customers/add", { name: $("acName").value, phone: $("acPhone").value, last_purchase: $("acLast").value });
+  const r = await api("/api/customers/add", { name: $("acName").value, phone: $("acPhone").value, last_purchase: $("acLast").value, address: $("acAddr").value });
   toast(r.added ? "เพิ่มลูกค้าแล้ว" : "มีเบอร์นี้อยู่แล้ว — อัปเดตข้อมูลให้แล้ว");
-  ["acName", "acPhone", "acLast"].forEach((id) => ($(id).value = ""));
+  ["acName", "acPhone", "acLast", "acAddr"].forEach((id) => ($(id).value = ""));
   custPage = 1; await loadState(); loadCustomers();
 });
 $("csvFile").onchange = (e) => busy(document.querySelector('label[for="csvFile"]'), async () => {
@@ -712,6 +717,13 @@ $("csvFile").onchange = (e) => busy(document.querySelector('label[for="csvFile"]
     (r.invalid_rows.length ? `<details><summary>ดูแถวที่เบอร์ผิด</summary><pre class="prompt">${esc(r.invalid_rows.join("\n"))}</pre></details>` : "");
   custPage = 1; await loadState(); loadCustomers();
 });
+
+function deliveryHtml(c) {
+  const v = c.delivery || {};
+  if (!v.address) return `<span class="chip warn"><i>!</i>ไม่มีที่อยู่</span>`;
+  const tag = v.address_source === "ที่อยู่เดิม" ? chip(["good", "✓", "ที่อยู่เดิม"]) : chip(["info", "✎", "ที่อยู่ใหม่"]);
+  return `${esc(v.recipient || "")} ${tag}<br>${esc(v.address)} · ${esc(v.contact_phone || "")}`;
+}
 
 // ---------- orders ----------
 async function loadOrders() {
@@ -725,7 +737,7 @@ async function loadOrders() {
       <td class="small">${esc(o.lines.join(" · ") || "-")}${o.has_upsell ? ` <span class="chip info"><i>⬆</i>อัปเซล</span>` : ""}
         ${o.warnings.length ? `<div class="warnbox small">ต้องตรวจสอบ: ${esc(o.warnings.join(", "))}</div>` : ""}</td>
       <td class="num strong">${baht(o.total)}</td>
-      <td class="small" style="max-width:260px">${esc(d.recipient_name || "")} ${esc(d.address || "")}<div class="muted">${esc(d.payment_method || "")} ${esc(d.contact_phone || "")}</div></td>
+      <td class="small" style="max-width:260px">${deliveryHtml(c)}<div class="muted">${esc(d.payment_method || "")}</div></td>
       <td>${c.is_test ? "" : `<select data-call="${esc(c.id)}">${Object.entries(ORDER_ST).map(([v, [, ico, t]]) => `<option value="${v}" ${v === (c.order_status || "") ? "selected" : ""}>${ico} ${t}</option>`).join("")}</select>`}</td>
       <td>${c.recording_url ? `<a class="small" href="${esc(c.recording_url)}" target="_blank" rel="noopener">▶ ฟังเสียง</a>` : ""}</td></tr>`;
   }).join("") || `<tr><td colspan="7" class="empty">ยังไม่มีออเดอร์</td></tr>`;
@@ -747,7 +759,7 @@ async function loadCalls() {
     const d = c.data || {}, o = c.order;
     const order = o ? `<div class="orderbox"><b>ออเดอร์:</b> ${esc(o.lines.join(" · ") || "-")} · <b>รวม ${baht(o.total)}</b>
         ${o.has_upsell ? ` <span class="chip info"><i>⬆</i>อัปเซล</span>` : ""}${o.has_backup ? ` <span class="chip warn"><i>🔁</i>สินค้าสำรอง</span>` : ""}
-        <div class="muted small">ที่อยู่: ${esc(d.address || "-")} · ผู้รับ: ${esc(d.recipient_name || "-")} · ${esc(d.payment_method || "")}</div>
+        <div class="muted small">${deliveryHtml(c)} · ${esc(d.payment_method || "")}</div>
         ${o.warnings.length ? `<div class="warnbox">ต้องตรวจสอบ: ${esc(o.warnings.join(", "))}</div>` : ""}</div>` : "";
     return `<div class="call">
       <div class="meta"><b>${esc(c.customer_name || "-")}</b><span class="muted">${esc(phoneTh(c.phone))}</span>
