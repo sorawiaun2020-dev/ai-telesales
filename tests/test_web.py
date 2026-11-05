@@ -68,7 +68,7 @@ class TestDashboard(unittest.TestCase):
         code, st = self.req("/api/state")
         self.assertEqual(code, 200)
         self.assertEqual(st["secrets"], {"VAPI_API_KEY": False, "VAPI_PHONE_NUMBER_ID": False, "VAPI_ASSISTANT_ID": False})
-        self.assertEqual(len(st["products"]), 3)
+        self.assertEqual(len(st["products"]), 4)
 
     def test_save_settings_and_secrets(self):
         code, _ = self.req("/api/settings", {
@@ -97,7 +97,7 @@ class TestDashboard(unittest.TestCase):
 
     def test_products(self):
         code, r = self.req("/api/products", {"products": [
-            {"sku": "TRAY", "name": "ถาดเพาะกล้า", "price": 25, "unit": "ถาด", "min_qty": 1, "details": "", "featured": True}]})
+            {"sku": "TRAY", "name": "ถาดเพาะกล้า", "price": 25, "unit": "ถาด", "min_qty": 1, "details": "", "role": "main"}]})
         self.assertEqual((code, r["count"]), (200, 1))
         _, p = self.req("/api/prompt")
         self.assertIn("[TRAY] ถาดเพาะกล้า", p["system_prompt"])
@@ -178,6 +178,61 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(c["total"], 0)                    # และไม่ถูกเพิ่มเป็นลูกค้า
         code, csv_out = self.req("/export/orders.csv")
         self.assertNotIn("สมชาย", csv_out)                 # ไม่อยู่ในไฟล์ออเดอร์จริง
+
+    def test_dashboard_orders_and_exports(self):
+        from telesales import db as dbm, xlsx
+        db = dbm.DB(os.path.join(self.tmp, "telesales.db"))
+        db.import_rows([{"name": "สมชาย", "phone": "0811111111"}, {"name": "มาลี", "phone": "0822222222"},
+                        {"name": "ลุงมี", "phone": "0833333333"}])
+        db.record_call_started("a", "+66811111111")
+        db.record_call_result("a", status="ended", ended_reason="x", outcome="ordered", summary="ซื้อ",
+                              data={"items": [{"sku": "BAG-PACK-50", "qty": 2}, {"sku": "SOIL-25", "qty": 1}],
+                                    "upsell_offered": True, "address": "บ้าน"},
+                              recording_url=None, transcript=None, cost=0.2, customer_status=dbm.DONE)
+        db.record_call_started("b", "+66822222222")
+        db.record_call_result("b", status="ended", ended_reason="x", outcome="not_interested", summary="",
+                              data={"backup_offered": True}, recording_url=None, transcript=None, cost=0.1,
+                              customer_status=dbm.DONE)
+        db.record_call_started("c", "+66833333333")
+        db.update_call_status("c", "in-progress")
+        db.close()
+
+        _, d = self.req("/api/dashboard")
+        k = d["kpi"]
+        self.assertEqual((k["orders"], k["revenue"], k["talked"]), (1, 1389, 2))
+        self.assertEqual((k["upsell_rate"], k["backup_rate"], k["close_rate"]), (1.0, 0.0, 0.5))
+        self.assertEqual(d["series"][-1]["revenue"], 1389)
+        self.assertEqual([p["sku"] for p in d["top_products"]], ["BAG-PACK-50", "SOIL-25"])
+        self.assertEqual([(c["name"], c["status"]) for c in d["live"]], [("ลุงมี", "in-progress")])
+
+        _, c = self.req("/api/customers?outcome=ordered")
+        self.assertEqual(c["total"], 1)
+        row = c["rows"][0]
+        self.assertEqual((row["name"], row["last_outcome"], row["order"]["total"]), ("สมชาย", "ordered", 1389))
+
+        self.assertEqual(self.req("/api/order-status", {"call_id": "a", "status": "shipped"})[0], 200)
+        self.assertEqual(self.req("/api/order-status", {"call_id": "b", "status": "shipped"})[0], 400)
+        self.assertEqual(self.req("/api/order-status", {"call_id": "a", "status": "lost"})[0], 400)
+        self.req("/api/order-status", {"call_id": "a", "status": "cancelled"})
+        self.assertEqual(self.req("/api/dashboard")[1]["kpi"]["revenue"], 0)  # ยกเลิกแล้วไม่นับยอด
+
+        code, raw = self.req("/export/customers.xlsx")
+        rows = xlsx.read_rows(raw)
+        self.assertEqual(code, 200)
+        self.assertEqual({r["ชื่อ"]: r["ผลการโทรล่าสุด"] for r in rows}["สมชาย"], "สั่งซื้อ")
+        code, raw = self.req("/export/orders.xlsx")
+        self.assertEqual(xlsx.read_rows(raw)[0]["สถานะออเดอร์"], "ยกเลิก")
+
+    def test_product_roles(self):
+        code, _ = self.req("/api/products", {"products": [
+            {"sku": "A", "name": "หลัก", "price": 10, "role": "main"},
+            {"sku": "B", "name": "เสริม", "price": 5, "role": "upsell"},
+            {"sku": "C", "name": "สำรอง", "price": 3, "role": "backup"}]})
+        self.assertEqual(code, 200)
+        _, p = self.req("/api/prompt")
+        self.assertIn("สินค้าอัปเซล", p["system_prompt"])
+        self.assertIn("[C] สำรอง", p["system_prompt"].split("สินค้าสำรอง")[1])
+        self.assertEqual(self.req("/api/products", {"products": [{"sku": "A", "name": "x", "price": 1, "role": "vip"}]})[0], 400)
 
     def test_password(self):
         self.app.close()

@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS calls (
     transcript    TEXT,
     cost          REAL,
     is_test       INTEGER NOT NULL DEFAULT 0,  -- สายทดสอบ: ไม่นับในสถิติ/ไฟล์ออเดอร์ และไม่เปลี่ยนสถานะลูกค้า
-    name          TEXT NOT NULL DEFAULT ''     -- ชื่อที่ให้ AI เรียก (ใช้กับสายทดสอบที่ไม่มีในรายชื่อลูกค้า)
+    name          TEXT NOT NULL DEFAULT '',    -- ชื่อที่ให้ AI เรียก (ใช้กับสายทดสอบที่ไม่มีในรายชื่อลูกค้า)
+    order_status  TEXT NOT NULL DEFAULT ''     -- ออเดอร์: '' = รอยืนยัน, confirmed, shipped, cancelled
 );
 CREATE INDEX IF NOT EXISTS idx_calls_phone ON calls(phone);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
@@ -86,6 +87,8 @@ class DB:
                 self.conn.execute("ALTER TABLE calls ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0")
             if "name" not in cols:
                 self.conn.execute("ALTER TABLE calls ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            if "order_status" not in cols:
+                self.conn.execute("ALTER TABLE calls ADD COLUMN order_status TEXT NOT NULL DEFAULT ''")
 
     def close(self) -> None:
         self.conn.close()
@@ -166,6 +169,30 @@ class DB:
                 (CALLING, ts, phone),
             )
 
+    def update_call_status(self, call_id: str, status: str) -> None:
+        """สถานะระหว่างสาย (queued / ringing / in-progress) — ใช้แสดง "กำลังคุย" แบบสด."""
+        with self.conn:
+            self.conn.execute("UPDATE calls SET status = ? WHERE id = ? AND status != 'ended'", (status, call_id))
+
+    def live_calls(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """SELECT calls.*, COALESCE(NULLIF(calls.name, ''), customers.name) AS customer_name FROM calls
+               LEFT JOIN customers ON customers.phone = calls.phone
+               WHERE calls.status != 'ended' ORDER BY calls.created_at DESC LIMIT 50"""
+        ).fetchall()
+
+    def set_order_status(self, call_id: str, status: str) -> bool:
+        with self.conn:
+            return self.conn.execute(
+                "UPDATE calls SET order_status = ? WHERE id = ? AND outcome = 'ordered'", (status, call_id)
+            ).rowcount > 0
+
+    def report_calls(self) -> list[sqlite3.Row]:
+        """ทุกสายจริง (ไม่รวมสายทดสอบ) สำหรับคำนวณสถิติและกราฟ."""
+        return self.conn.execute(
+            "SELECT id, created_at, outcome, data_json, cost, order_status FROM calls WHERE is_test = 0"
+        ).fetchall()
+
     def pending_calls(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM calls WHERE status != 'ended' ORDER BY created_at").fetchall()
 
@@ -202,8 +229,13 @@ class DB:
             ).rowcount > 0
 
     def list_customers(self, q: str = "", status: str = "", limit: int = 50,
-                       offset: int = 0) -> tuple[list[sqlite3.Row], int]:
+                       offset: int = 0, outcome: str = "") -> tuple[list[sqlite3.Row], int]:
         where, args = [], []
+        if outcome:  # กรองตามผลของสายล่าสุด
+            where.append("""phone IN (SELECT k.phone FROM calls k WHERE k.is_test = 0 AND k.outcome = ?
+                              AND k.created_at = (SELECT MAX(created_at) FROM calls
+                                                  WHERE phone = k.phone AND is_test = 0))""")
+            args.append(outcome)
         if q:
             where.append("(name LIKE ? OR phone LIKE ?)")
             digits = "".join(ch for ch in q if ch.isdigit()).lstrip("0")
@@ -213,11 +245,23 @@ class DB:
             args.append(status)
         cond = ("WHERE " + " AND ".join(where)) if where else ""
         total = self.conn.execute(f"SELECT COUNT(*) FROM customers {cond}", args).fetchone()[0]
+        # แนบผลของสายล่าสุด (ไม่รวมสายทดสอบ) ให้แต่ละคน — ใช้แสดงผล/ยอดขายในตารางลูกค้า
         rows = self.conn.execute(
-            f"SELECT * FROM customers {cond} ORDER BY imported_at DESC, phone LIMIT ? OFFSET ?",
+            f"""SELECT c.*, k.id AS call_id, k.outcome AS last_outcome, k.summary AS last_summary,
+                       k.data_json AS last_data, k.status AS last_call_status, k.order_status AS order_status,
+                       k.recording_url AS recording_url
+                FROM (SELECT * FROM customers {cond}
+                      ORDER BY COALESCE(last_call_at, '') DESC, imported_at DESC, phone LIMIT ? OFFSET ?) c
+                LEFT JOIN calls k ON k.id = (SELECT id FROM calls WHERE phone = c.phone AND is_test = 0
+                                             ORDER BY created_at DESC LIMIT 1)
+                ORDER BY COALESCE(c.last_call_at, '') DESC, c.imported_at DESC, c.phone""",
             args + [limit, offset],
         ).fetchall()
         return rows, total
+
+    def all_customers_with_last_call(self) -> list[sqlite3.Row]:
+        rows, _ = self.list_customers(limit=-1)
+        return rows
 
     def list_calls(self, outcome: str = "", limit: int = 50, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
         cond, args = ("WHERE calls.outcome = ?", [outcome]) if outcome else ("", [])

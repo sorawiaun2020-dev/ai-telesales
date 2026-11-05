@@ -23,10 +23,11 @@ from . import db as dbm
 from .campaign import call_variables, place_calls, sync_results
 from .config import (SECRET_KEYS, Calling, Config, ConfigError, load_config, load_secrets,
                      parse_products, save_secrets, write_json, _read_json)
-from .export import OUTCOME_TH, STATUS_TH, export_all, price_order
+from .export import OUTCOME_TH, STATUS_TH, export_all
 from .phone import normalize_th
 from .prompt import build_assistant_payload, build_first_message, build_system_prompt
 from .vapi import VapiClient, VapiError
+from . import report
 from .xlsx import XlsxError, customer_template
 
 log = logging.getLogger("telesales")
@@ -301,13 +302,47 @@ class App:
         os.startfile(path)  # noqa: S606
         return {"ok": True, "path": path}
 
-    def customers(self, q: str, status: str, page: int) -> dict:
+    def customers(self, q: str, status: str, page: int, outcome: str = "") -> dict:
         db = self.db()
         try:
-            rows, total = db.list_customers(q, status, 50, (page - 1) * 50)
+            rows, total = db.list_customers(q, status, 50, (page - 1) * 50, outcome)
         finally:
             db.close()
-        return {"total": total, "rows": [dict(r) for r in rows]}
+        cfg = self.cfg()
+        return {"total": total, "rows": [report.customer_row(cfg, r) for r in rows]}
+
+    def dashboard(self) -> dict:
+        cfg = self.cfg()
+        db = self.db()
+        try:
+            out = report.dashboard(cfg, db)
+            out["live"] = [{"id": r["id"], "name": r["customer_name"] or "", "phone": r["phone"],
+                            "status": r["status"], "created_at": r["created_at"], "is_test": r["is_test"]}
+                           for r in db.live_calls()]
+        finally:
+            db.close()
+        return out
+
+    def set_order_status(self, body: dict) -> dict:
+        status = str(body.get("status") or "")
+        if status not in report.ORDER_STATUS_TH:
+            raise ConfigError("สถานะออเดอร์ไม่ถูกต้อง")
+        db = self.db()
+        try:
+            ok = db.set_order_status(str(body.get("call_id") or ""), status)
+        finally:
+            db.close()
+        if not ok:
+            raise ConfigError("ไม่พบออเดอร์นี้")
+        return {"ok": True}
+
+    def export_xlsx(self, kind: str) -> bytes:
+        cfg = self.cfg()
+        db = self.db()
+        try:
+            return report.customers_xlsx(cfg, db) if kind == "customers" else report.orders_xlsx(cfg, db)
+        finally:
+            db.close()
 
     def set_dnc(self, body: dict) -> dict:
         phone = normalize_th(body.get("phone"))
@@ -334,8 +369,7 @@ class App:
             data = json.loads(d.pop("data_json") or "{}")
             d["data"] = data
             if d["outcome"] == "ordered":
-                lines, total_baht, warnings = price_order(cfg, data.get("items") or [])
-                d["order"] = {"lines": lines, "total": total_baht, "warnings": warnings}
+                d["order"] = report.order_of(cfg, data)
             out.append(d)
         return {"total": total, "rows": out}
 
@@ -494,6 +528,12 @@ def make_handler(app: App):
                 if route == ("GET", "/"):
                     with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                         return self._send(200, f.read(), "text/html; charset=utf-8")
+                if method == "GET" and url.path in ("/export/customers.xlsx", "/export/orders.xlsx"):
+                    kind = "customers" if "customers" in url.path else "orders"
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+                    return self._send(200, app.export_xlsx(kind),
+                                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                      {"Content-Disposition": f'attachment; filename="{kind}-{stamp}.xlsx"'})
                 if route == ("GET", "/export/customers-template.xlsx"):
                     return self._send(200, customer_template(),
                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -507,8 +547,11 @@ def make_handler(app: App):
                 handlers = {
                     ("GET", "/api/state"): lambda: app.state(),
                     ("GET", "/api/prompt"): lambda: app.prompt(),
-                    ("GET", "/api/customers"): lambda: app.customers(qs.get("q", ""), qs.get("status", ""), page),
+                    ("GET", "/api/customers"): lambda: app.customers(qs.get("q", ""), qs.get("status", ""), page,
+                                                                       qs.get("outcome", "")),
                     ("GET", "/api/calls"): lambda: app.calls(qs.get("outcome", ""), page),
+                    ("GET", "/api/dashboard"): lambda: app.dashboard(),
+                    ("POST", "/api/order-status"): lambda: app.set_order_status(self._json_body()),
                     ("GET", "/api/preview"): lambda: app.preview(),
                     ("GET", "/api/logs"): lambda: {"lines": list(app.logs.lines)},
                     ("POST", "/api/settings"): lambda: app.save_settings(self._json_body()),

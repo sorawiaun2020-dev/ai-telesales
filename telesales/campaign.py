@@ -126,6 +126,8 @@ def sync_results(db: dbm.DB, client: VapiClient, max_attempts: int) -> dict[str,
             continue
         status = call.get("status") or "unknown"
         if status != "ended":
+            if status != row["status"]:
+                db.update_call_status(row["id"], status)
             continue
         outcome, data = classify(call)
         customer_status = _OUTCOME_STATUS[outcome]

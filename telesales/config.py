@@ -70,7 +70,11 @@ class Product:
     unit: str = "ชิ้น"
     min_qty: int = 1
     details: str = ""
-    featured: bool = False
+    role: str = "main"  # main = สินค้าหลัก, upsell = เสนอเพิ่มเมื่อซื้อ, backup = เสนอแทนเมื่อไม่สนใจ, other = ตอบเมื่อถูกถาม
+
+    @property
+    def featured(self) -> bool:  # ไฟล์รุ่นก่อนใช้ featured=true แทน role=main
+        return self.role == "main"
 
 
 @dataclass
@@ -138,6 +142,18 @@ def load_products(path: str) -> list[Product]:
     return products
 
 
+PRODUCT_ROLES = ("main", "upsell", "backup", "other")
+
+
+def _product_role(p: dict[str, Any]) -> str:
+    role = str(p.get("role") or "").strip().lower()
+    if not role:  # products.json จากโปรแกรมรุ่นก่อน
+        return "main" if p.get("featured") else "other"
+    if role not in PRODUCT_ROLES:
+        raise ConfigError(f"บทบาทสินค้าไม่ถูกต้อง: {role!r}")
+    return role
+
+
 def parse_products(raw: list[dict[str, Any]]) -> list[Product]:
     """ตรวจสอบรายการสินค้า (ใช้ทั้งตอนโหลดไฟล์และตอนบันทึกจาก dashboard)."""
     products: list[Product] = []
@@ -151,7 +167,7 @@ def parse_products(raw: list[dict[str, Any]]) -> list[Product]:
                 unit=str(p.get("unit") or "ชิ้น"),
                 min_qty=int(p.get("min_qty") or 1),
                 details=str(p.get("details") or ""),
-                featured=bool(p.get("featured")),
+                role=_product_role(p),
             )
         except (KeyError, TypeError, ValueError) as e:
             raise ConfigError(f"สินค้าลำดับที่ {i + 1} ต้องมี sku, name, price: {e}") from e
