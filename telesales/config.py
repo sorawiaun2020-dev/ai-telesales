@@ -109,6 +109,7 @@ class Config:
     vapi_assistant_id: str
     assistant: dict[str, Any]
     products: list[Product]
+    script: dict[str, Any] = field(default_factory=dict)  # บทพูดที่ผู้ใช้แก้เอง (ว่าง = ใช้ค่าเริ่มต้น)
 
     def product(self, sku: str) -> Product | None:
         for p in self.products:
@@ -200,4 +201,5 @@ def load_config(config_path: str, products_path: str, secrets_path: str | None =
         vapi_assistant_id=resolve_env(vapi.get("assistant_id", "env:VAPI_ASSISTANT_ID"), secrets),
         assistant=dict(raw.get("assistant") or {}),
         products=load_products(products_path),
+        script=dict(raw.get("script") or {}),
     )

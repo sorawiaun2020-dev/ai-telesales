@@ -58,6 +58,7 @@
   .head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
   .grid2 { display: grid; gap: 18px; grid-template-columns: 2fr 1fr; }
   .grid2e { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  .scriptGrid { display: grid; gap: 18px; grid-template-columns: 1fr 340px; align-items: start; }
   .kpis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 18px; }
   .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
   .kpi .k { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; }
@@ -151,7 +152,7 @@
     .logo small, .side-foot { display: none; }
     .logo { padding: 4px 8px; }
     nav { display: flex; gap: 4px; } nav button { white-space: nowrap; width: auto; }
-    .grid2, .grid2e { grid-template-columns: 1fr; }
+    .grid2, .grid2e, .scriptGrid { grid-template-columns: 1fr; }
     .topbar, .content { padding-left: 16px; padding-right: 16px; }
   }
 </style>
@@ -166,6 +167,7 @@
       <button data-t="orders"><span class="ico">🧾</span>ออเดอร์<span class="count" id="navOrders" hidden></span></button>
       <button data-t="results"><span class="ico">🎧</span>ผลการโทร</button>
       <button data-t="products"><span class="ico">🌱</span>สินค้า</button>
+      <button data-t="script"><span class="ico">📝</span>บทพูด AI</button>
       <button data-t="settings"><span class="ico">⚙️</span>ตั้งค่า</button>
     </nav>
     <div class="side-foot" id="sideFoot">อัปเดตอัตโนมัติทุก 10 วินาที</div>
@@ -353,9 +355,56 @@
             <button class="btn" id="prodAdd">+ เพิ่มสินค้า</button>
             <button class="btn pri" id="prodSave">บันทึก</button>
             <button class="btn pri" id="syncAsst">อัปเดตบทพูดให้ AI</button>
-            <button class="btn" id="showPrompt">ดูบทพูดของ AI</button>
+            <button class="btn" id="showPrompt">📝 แก้บทพูดของ AI</button>
           </div>
-          <div id="promptBox"></div>
+        </div>
+      </section>
+
+      <!-- บทพูด AI -->
+      <section id="script">
+        <div class="card">
+          <div class="head">
+            <div><h2>บทพูดของ AI <span id="scriptBadge"></span></h2>
+              <p class="sub" style="margin:0">แก้ได้เองทั้งหมด แก้เสร็จกด <b>บันทึกและอัปเดตให้ AI</b> สายถัดไปจะใช้บทพูดใหม่ทันที</p></div>
+            <div class="btns">
+              <button class="btn" id="scPreview">👁 ดูบทพูดจริง</button>
+              <button class="btn" id="scReset">↺ คืนค่าเริ่มต้น</button>
+              <button class="btn" id="scSave">💾 บันทึก</button>
+              <button class="btn pri" id="scSaveSync">💾 บันทึกและอัปเดตให้ AI</button>
+            </div>
+          </div>
+          <div id="scWarn"></div>
+          <div class="scriptGrid">
+            <div>
+              <label>ประโยคแรก (AI พูดทันทีที่ลูกค้ารับสาย)</label>
+              <textarea id="scFirst" style="min-height:60px"></textarea>
+              <label style="margin-top:14px">บทพูดและวิธีขาย (คำสั่งที่ AI ใช้ตลอดสาย)</label>
+              <textarea id="scBody" spellcheck="false" style="min-height:560px;font-size:14px;line-height:1.6"></textarea>
+              <details style="margin-top:12px"><summary>🔒 กฎที่ระบบต่อท้ายให้เสมอ (แก้ไม่ได้)</summary>
+                <p class="muted small">เพื่อความปลอดภัยของลูกค้าและร้าน: ห้ามขอ OTP/เลขบัตร, ตอบตามจริงเมื่อถูกถามว่าเป็น AI, จบสายเมื่อลูกค้าขอไม่ให้โทร</p>
+                <pre class="prompt" id="scFixed"></pre></details>
+              <div id="scPreviewBox"></div>
+            </div>
+            <div class="card" style="margin:0;box-shadow:none;position:sticky;top:90px">
+              <h2>📖 คู่มือ</h2>
+              <p class="small" style="margin:6px 0 10px"><b>คลิกปุ่มด้านล่างเพื่อแทรกข้อมูล</b> ตรงตำแหน่งที่เคอร์เซอร์อยู่ ระบบจะเติมค่าจริงให้เอง</p>
+              <div class="small strong">ข้อมูลร้าน (จากหน้าตั้งค่า/สินค้า)</div>
+              <div class="btns" id="tokShop" style="margin:6px 0 12px"></div>
+              <div class="small strong">ข้อมูลลูกค้า (เติมตอนโทรแต่ละสาย)</div>
+              <div class="btns" id="tokCust" style="margin:6px 0 12px"></div>
+              <div class="small strong">ใช้ในประโยคแรก</div>
+              <div class="btns" id="tokFirst" style="margin:6px 0 14px"></div>
+              <div class="small strong">เคล็ดลับการเขียน</div>
+              <ul class="small" style="padding-left:18px;margin:6px 0 0;color:var(--ink2)">
+                <li>เขียนเหมือนสอนพนักงานใหม่ บอกเป็นข้อ ๆ ว่าต้องทำอะไรก่อนหลัง</li>
+                <li>ยกตัวอย่างประโยคที่อยากให้พูด เช่น <i>"ถ้าลูกค้าบอกแพง ให้ตอบว่า..."</i></li>
+                <li>สั่งให้พูดสั้น 1-2 ประโยคแล้วรอฟัง AI จะฟังเป็นธรรมชาติกว่า</li>
+                <li>อย่าลบ <b>{รายการสินค้า}</b> ไม่งั้น AI ไม่รู้ราคา (แก้ราคาที่หน้าสินค้า ไม่ต้องพิมพ์ราคาเองในนี้)</li>
+                <li>ถ้าเปลี่ยนเสียงเป็นผู้ชาย อย่าลืมแก้ "ค่ะ" เป็น "ครับ" ทั้งประโยคแรกและบทพูด</li>
+                <li>แก้แล้วโทรทดสอบทุกครั้ง ถ้าแย่ลงกด <b>คืนค่าเริ่มต้น</b> ได้</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -440,7 +489,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const DAYS = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."];
-const TITLES = { home: "ภาพรวม", customers: "ลูกค้า", orders: "ออเดอร์", results: "ผลการโทร", products: "สินค้า", settings: "ตั้งค่า" };
+const TITLES = { home: "ภาพรวม", customers: "ลูกค้า", orders: "ออเดอร์", results: "ผลการโทร", products: "สินค้า", script: "บทพูด AI", settings: "ตั้งค่า" };
 // สถานะ: สี + ไอคอน + ข้อความเสมอ (ไม่ใช้สีอย่างเดียว)
 const OUTCOME = {
   ordered: ["good", "✓", "สั่งซื้อ"], callback: ["warn", "↻", "ขอให้โทรกลับ"], not_interested: ["", "–", "ไม่สนใจ"],
@@ -493,6 +542,7 @@ function pager(el, total, page, go) {
 
 // ---------- navigation ----------
 function show(t) {
+  if (cur === "script" && t !== "script" && scriptDirty && !confirm("บทพูดที่แก้ยังไม่ได้บันทึก ออกจากหน้านี้ไหม?")) return;
   cur = t;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
   document.querySelectorAll(".content section").forEach((s) => s.classList.toggle("on", s.id === t));
@@ -505,6 +555,7 @@ function refreshPage() {
   if (cur === "customers") loadCustomers();
   if (cur === "orders") loadOrders();
   if (cur === "results" && !document.querySelector("#callList details[open]")) loadCalls();
+  if (cur === "script" && !scriptLoaded) loadScript();
 }
 
 // ---------- state (settings, campaign) ----------
@@ -819,10 +870,56 @@ $("syncAsst").onclick = (e) => busy(e.target, async () => {
   const r = await api("/api/sync-assistant", {});
   toast(r.created ? "สร้าง AI บน Vapi แล้ว" : "อัปเดตบทพูดของ AI แล้ว"); loadState();
 });
-$("showPrompt").onclick = (e) => busy(e.target, async () => {
-  const r = await api("/api/prompt");
-  $("promptBox").innerHTML = `<p style="margin-top:16px"><b>ประโยคแรก:</b> ${esc(r.first_message)}</p><pre class="prompt">${esc(r.system_prompt)}</pre>`;
+$("showPrompt").onclick = () => show("script");
+
+// ---------- script editor ----------
+let scriptLoaded = false, lastField = null, scriptDirty = false;
+async function loadScript() {
+  const r = await api("/api/script");
+  $("scFirst").value = r.first_message; $("scBody").value = r.system_prompt; $("scFixed").textContent = r.fixed_rules;
+  $("scriptBadge").innerHTML = r.is_default ? chip(["info", "•", "ใช้บทพูดเริ่มต้น"]) : chip(["good", "✎", "ใช้บทพูดที่คุณแก้"]);
+  const btns = (el, toks) => { el.innerHTML = Object.entries(toks).map(([k, d]) => `<button class="btn sm" title="${esc(d)}" data-tok="${esc(k)}">{${esc(k)}}</button>`).join(""); };
+  btns($("tokShop"), r.tokens.shop); btns($("tokCust"), r.tokens.customer); btns($("tokFirst"), r.tokens.first);
+  scriptLoaded = true; scriptDirty = false; $("scWarn").innerHTML = ""; $("scPreviewBox").innerHTML = "";
+}
+["scFirst", "scBody"].forEach((id) => {
+  $(id).addEventListener("focus", () => (lastField = $(id)));
+  $(id).addEventListener("input", () => { scriptDirty = true; });
 });
+document.querySelectorAll("#tokShop, #tokCust, #tokFirst").forEach((box) => box.addEventListener("mousedown", (e) => {
+  const b = e.target.closest("button[data-tok]"); if (!b) return;
+  e.preventDefault();  // ไม่ให้ช่องพิมพ์เสียโฟกัส
+  const f = lastField || $("scBody"), text = "{" + b.dataset.tok + "}";
+  const a = f.selectionStart ?? f.value.length, z = f.selectionEnd ?? a;
+  f.value = f.value.slice(0, a) + text + f.value.slice(z); f.focus();
+  f.selectionStart = f.selectionEnd = a + text.length; scriptDirty = true;
+}));
+const scriptBody = () => ({ first_message: $("scFirst").value, system_prompt: $("scBody").value });
+const showWarn = (w) => { $("scWarn").innerHTML = (w || []).map((x) => `<div class="warnbox">⚠️ ${esc(x)}</div>`).join(""); };
+async function saveScript(sync) {
+  const r = await api("/api/script", scriptBody());
+  scriptDirty = false; showWarn(r.warnings);
+  if (sync) { await api("/api/sync-assistant", {}); toast("บันทึกและอัปเดตบทพูดให้ AI แล้ว — โทรทดสอบได้เลย"); }
+  else toast("บันทึกแล้ว — กด 'บันทึกและอัปเดตให้ AI' เพื่อให้ AI ใช้บทพูดนี้");
+  const st = await api("/api/script");
+  $("scriptBadge").innerHTML = st.is_default ? chip(["info", "•", "ใช้บทพูดเริ่มต้น"]) : chip(["good", "✎", "ใช้บทพูดที่คุณแก้"]);
+}
+$("scSave").onclick = (e) => busy(e.target, () => saveScript(false));
+$("scSaveSync").onclick = (e) => busy(e.target, () => saveScript(true));
+$("scPreview").onclick = (e) => busy(e.target, async () => {
+  const r = await api("/api/script/preview", scriptBody());
+  showWarn(r.warnings);
+  $("scPreviewBox").innerHTML = `<h2 style="margin-top:18px">ตัวอย่างบทพูดจริงที่ส่งให้ AI</h2>
+    <p class="muted small">ข้อความในวงเล็บคู่ เช่น {{customer_name}} คือข้อมูลลูกค้าที่ระบบเติมตอนโทรแต่ละสาย</p>
+    <p><b>ประโยคแรก:</b> ${esc(r.first_message)}</p><pre class="prompt">${esc(r.system_prompt)}</pre>`;
+  $("scPreviewBox").scrollIntoView({ behavior: "smooth" });
+});
+$("scReset").onclick = (e) => busy(e.target, async () => {
+  if (!confirm("คืนบทพูดเป็นค่าเริ่มต้นของโปรแกรมไหม? บทพูดที่คุณแก้ไว้จะหายไป")) return;
+  await api("/api/script", { reset: true }); await loadScript();
+  toast("คืนค่าเริ่มต้นแล้ว — กด 'บันทึกและอัปเดตให้ AI' เพื่อส่งให้ AI");
+});
+window.addEventListener("beforeunload", (e) => { if (scriptDirty) { e.preventDefault(); e.returnValue = ""; } });
 
 // ---------- settings ----------
 function renderSettings() {

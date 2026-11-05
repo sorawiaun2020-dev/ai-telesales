@@ -25,6 +25,7 @@ from .config import (SECRET_KEYS, Calling, Config, ConfigError, load_config, loa
                      parse_products, save_secrets, write_json, _read_json)
 from .export import OUTCOME_TH, STATUS_TH, export_all
 from .phone import normalize_th
+from . import prompt as pr
 from .prompt import build_assistant_payload, build_first_message, build_system_prompt
 from .vapi import VapiClient, VapiError
 from . import report
@@ -261,6 +262,67 @@ class App:
         save_secrets(self.paths.secrets, {"VAPI_ASSISTANT_ID": res["id"]})
         log.info("สร้าง AI บน Vapi แล้ว (บันทึก Assistant ID ให้อัตโนมัติ)")
         return {"ok": True, "created": True}
+
+    MAX_SCRIPT = 30000
+
+    def script(self) -> dict:
+        cfg = self.cfg()
+        first, body = pr.script_texts(cfg)
+        return {
+            "first_message": first, "system_prompt": body,
+            "is_default": not (cfg.script.get("first_message") or cfg.script.get("system_prompt")),
+            "default_first_message": pr.DEFAULT_FIRST_MESSAGE, "default_system_prompt": pr.DEFAULT_SYSTEM_PROMPT,
+            "tokens": {"shop": pr.SHOP_TOKENS, "customer": {k: v[1] for k, v in pr.CUSTOMER_TOKENS.items()},
+                       "first": pr.FIRST_MESSAGE_TOKENS},
+            "fixed_rules": pr.fixed_rules(cfg),
+        }
+
+    def _script_body(self, body: dict) -> tuple[str, str]:
+        first = str(body.get("first_message") or "").strip()
+        text = str(body.get("system_prompt") or "").strip()
+        if not first or not text:
+            raise ConfigError("ประโยคแรกและบทพูดต้องไม่ว่าง (ถ้าต้องการค่าเริ่มต้น กด 'คืนค่าเริ่มต้น')")
+        if len(first) > 1000 or len(text) > self.MAX_SCRIPT:
+            raise ConfigError("บทพูดยาวเกินไป")
+        return first, text
+
+    @staticmethod
+    def _script_warnings(first: str, text: str) -> list[str]:
+        out = []
+        bad = pr.unknown_tokens(first + "\n" + text)
+        if bad:
+            out.append("ไม่รู้จัก: " + ", ".join("{" + b + "}" for b in bad)
+                       + " — ระบบจะส่งคำนี้ไปตามที่เขียน ไม่ได้แทนค่า")
+        if "{รายการสินค้า}" not in text:
+            out.append("บทพูดไม่มี {รายการสินค้า} — AI จะไม่รู้สินค้าและราคา")
+        if "{ที่อยู่เดิม}" not in text:
+            out.append("บทพูดไม่มี {ที่อยู่เดิม} — AI จะไม่รู้ที่อยู่เดิมของลูกค้า และต้องถามที่อยู่ใหม่ทุกครั้ง")
+        return out
+
+    def preview_script(self, body: dict) -> dict:
+        first, text = self._script_body(body)
+        cfg = self.cfg()
+        cfg.script = {"first_message": first, "system_prompt": text}
+        return {"first_message": build_first_message(cfg), "system_prompt": build_system_prompt(cfg),
+                "warnings": self._script_warnings(first, text)}
+
+    def save_script(self, body: dict) -> dict:
+        if body.get("reset"):
+            first, text = "", ""
+        else:
+            first, text = self._script_body(body)
+            # ถ้าเหมือนค่าเริ่มต้นก็ไม่ต้องเก็บ จะได้รับการปรับปรุงบทพูดเริ่มต้นในรุ่นถัดไป
+            if first == pr.DEFAULT_FIRST_MESSAGE.strip():
+                first = ""
+            if text == pr.DEFAULT_SYSTEM_PROMPT.strip():
+                text = ""
+        with self._file_lock:
+            raw = _read_json(self.paths.config)
+            raw["script"] = {"first_message": first, "system_prompt": text}
+            write_json(self.paths.config, raw)
+        log.info("คืนบทพูดเป็นค่าเริ่มต้นแล้ว" if body.get("reset") else "บันทึกบทพูดแล้ว")
+        return {"ok": True, "warnings": [] if body.get("reset") else self._script_warnings(
+            *(pr.script_texts(self.cfg())))}
 
     def prompt(self) -> dict:
         cfg = self.cfg()
@@ -550,6 +612,9 @@ def make_handler(app: App):
                 handlers = {
                     ("GET", "/api/state"): lambda: app.state(),
                     ("GET", "/api/prompt"): lambda: app.prompt(),
+                    ("GET", "/api/script"): lambda: app.script(),
+                    ("POST", "/api/script"): lambda: app.save_script(self._json_body()),
+                    ("POST", "/api/script/preview"): lambda: app.preview_script(self._json_body()),
                     ("GET", "/api/customers"): lambda: app.customers(qs.get("q", ""), qs.get("status", ""), page,
                                                                        qs.get("outcome", "")),
                     ("GET", "/api/calls"): lambda: app.calls(qs.get("outcome", ""), page),

@@ -272,6 +272,30 @@ class TestDashboard(unittest.TestCase):
         self.assertIn("{{address}}", p["system_prompt"])
         self.assertIn("ห้ามขอให้ลูกค้าบอกที่อยู่ใหม่", p["system_prompt"])
 
+    def test_script_editor(self):
+        _, sc = self.req("/api/script")
+        self.assertTrue(sc["is_default"])
+        self.assertIn("{รายการสินค้า}", sc["system_prompt"])
+        body = "คุณคือ {ชื่อพนักงาน} จาก {ชื่อร้าน} ขายของให้ {ชื่อลูกค้า}\n{รายการสินค้า}\nที่อยู่ {ที่อยู่เดิม} {อะไรนะ}"
+        code, r = self.req("/api/script/preview", {"first_message": "หวัดดีครับ {ชื่อลูกค้า}", "system_prompt": body})
+        self.assertEqual(code, 200)
+        self.assertEqual(r["first_message"], "หวัดดีครับ {{customer_name}}")
+        self.assertIn("ขายของให้ {{customer_name}}", r["system_prompt"])
+        self.assertIn("[BAG-12]", r["system_prompt"])                  # รายการสินค้าถูกแทนค่า
+        self.assertIn("ห้ามขอเลขบัตรประชาชน", r["system_prompt"])       # กฎที่ระบบบังคับต่อท้ายเสมอ
+        self.assertTrue(any("{อะไรนะ}" in w for w in r["warnings"]))
+        _, sc = self.req("/api/script")
+        self.assertTrue(sc["is_default"])                               # preview ไม่บันทึก
+        code, r = self.req("/api/script", {"first_message": "หวัดดีครับ {ชื่อลูกค้า}", "system_prompt": "ขาย {ชื่อร้าน}"})
+        self.assertEqual(code, 200)
+        self.assertTrue(any("{รายการสินค้า}" in w for w in r["warnings"]))
+        _, p = self.req("/api/prompt")
+        self.assertTrue(p["system_prompt"].startswith("ขาย ร้านเกษตรของเรา"))
+        self.assertEqual(self.req("/api/script", {"first_message": "", "system_prompt": "x"})[0], 400)
+        self.req("/api/script", {"reset": True})
+        _, sc = self.req("/api/script")
+        self.assertTrue(sc["is_default"])
+
     def test_password(self):
         self.app.close()
         self.httpd.shutdown()
