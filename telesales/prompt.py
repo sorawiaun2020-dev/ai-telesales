@@ -149,6 +149,24 @@ def structured_data_schema() -> dict[str, Any]:
     }
 
 
+# AI รอให้ลูกค้าเงียบนานแค่ไหนก่อนตอบ (วินาที) — ภาษาไทยไม่มีเครื่องหมายจบประโยค
+# Vapi จึงใช้ onNoPunctuationSeconds เป็นหลัก ซึ่งค่าเริ่มต้นคือ 1.5 วินาที (ช้า)
+RESPONSE_SPEEDS = {
+    "fast": {"waitSeconds": 0.2, "onPunctuationSeconds": 0.1, "onNoPunctuationSeconds": 0.6, "onNumberSeconds": 0.5},
+    "normal": {"waitSeconds": 0.4, "onPunctuationSeconds": 0.1, "onNoPunctuationSeconds": 1.0, "onNumberSeconds": 0.6},
+    "patient": {"waitSeconds": 0.6, "onPunctuationSeconds": 0.3, "onNoPunctuationSeconds": 1.5, "onNumberSeconds": 0.8},
+}
+
+
+def build_start_speaking_plan(speed: str) -> dict[str, Any]:
+    s = RESPONSE_SPEEDS.get(speed) or RESPONSE_SPEEDS["fast"]
+    return {
+        "waitSeconds": s["waitSeconds"],
+        "transcriptionEndpointingPlan": {k: s[k] for k in ("onPunctuationSeconds", "onNoPunctuationSeconds",
+                                                             "onNumberSeconds")},
+    }
+
+
 def build_voice(a: dict[str, Any]) -> dict[str, Any]:
     voice: dict[str, Any] = {"provider": a.get("voice_provider") or "azure",
                              "voiceId": a.get("voice_id") or "th-TH-PremwadeeNeural"}
@@ -175,6 +193,7 @@ def build_assistant_payload(cfg: Config) -> dict[str, Any]:
         "voice": build_voice(a),
         "transcriber": {"provider": a.get("transcriber_provider", "azure"), "language": a.get("language", "th-TH")},
         "maxDurationSeconds": int(a.get("max_duration_seconds", 480)),
+        "startSpeakingPlan": build_start_speaking_plan(str(a.get("response_speed") or "fast")),
         "endCallFunctionEnabled": True,
         "endCallMessage": "ขอบคุณมากนะคะ ขอให้ผักงามนะคะ สวัสดีค่ะ",
         "analysisPlan": {

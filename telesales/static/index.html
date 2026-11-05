@@ -411,6 +411,13 @@
               <div><label>โมเดล</label><input id="aModel"></div>
               <div><label>ความยาวสายสูงสุด (วินาที)</label><input id="aMaxDur" type="number" min="60"></div>
             </div>
+            <div class="row">
+              <div><label>ความเร็วในการตอบของ AI</label><select id="aSpeed">
+                <option value="fast">เร็ว — ตอบทันทีเมื่อลูกค้าหยุดพูด (แนะนำ)</option>
+                <option value="normal">ปกติ — รอเพิ่มอีกนิด</option>
+                <option value="patient">รอฟังนาน — สำหรับลูกค้าที่พูดช้า หยุดคิดบ่อย</option></select>
+                <p class="muted small">ถ้า AI พูดแทรกตอนลูกค้ายังพูดไม่จบ ให้เปลี่ยนเป็น "ปกติ"</p></div>
+            </div>
             <p class="muted small">เปลี่ยนเสียงหรือโมเดลแล้ว ต้องกด "อัปเดตบทพูดให้ AI" ในหน้าสินค้าด้วย</p>
           </details>
         </div>
@@ -822,7 +829,7 @@ function renderSettings() {
   $("aVoiceM").value = a.voice_model || ""; $("aVoiceL").value = a.voice_language || "";
   $("aSttP").value = a.transcriber_provider || ""; $("aLang").value = a.language || "";
   $("aModelP").value = a.model_provider || ""; $("aModel").value = a.model || "";
-  $("aMaxDur").value = a.max_duration_seconds ?? 480;
+  $("aMaxDur").value = a.max_duration_seconds ?? 480; $("aSpeed").value = a.response_speed || "fast";
 }
 $("saveSettings").onclick = (e) => busy(e.target, async () => {
   await api("/api/settings", {
@@ -835,7 +842,8 @@ $("saveSettings").onclick = (e) => busy(e.target, async () => {
     assistant: { voice_provider: $("aVoiceP").value.trim(), voice_id: $("aVoice").value.trim(),
                  voice_model: $("aVoiceM").value.trim(), voice_language: $("aVoiceL").value.trim(),
                  transcriber_provider: $("aSttP").value.trim(), language: $("aLang").value.trim(),
-                 model_provider: $("aModelP").value.trim(), model: $("aModel").value.trim(), max_duration_seconds: +$("aMaxDur").value },
+                 model_provider: $("aModelP").value.trim(), model: $("aModel").value.trim(), max_duration_seconds: +$("aMaxDur").value,
+                 response_speed: $("aSpeed").value },
     secrets: { VAPI_API_KEY: $("sKey").value, VAPI_PHONE_NUMBER_ID: $("sPhone").value, VAPI_ASSISTANT_ID: $("sAsst").value },
   });
   ["sKey", "sPhone", "sAsst"].forEach((id) => ($(id).value = ""));

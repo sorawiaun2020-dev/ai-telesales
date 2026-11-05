@@ -81,6 +81,10 @@ class TestConfigAndPrompt(unittest.TestCase):
         self.assertEqual(build_assistant_payload(cfg)["voice"], {
             "provider": "11labs", "voiceId": "abc", "model": "eleven_multilingual_v2", "language": "th"})
         json.dumps(payload)  # ต้องแปลงเป็น JSON ได้
+        plan = payload["startSpeakingPlan"]
+        self.assertEqual(plan["transcriptionEndpointingPlan"]["onNoPunctuationSeconds"], 0.6)  # ค่าเริ่มต้น = เร็ว
+        cfg.assistant["response_speed"] = "patient"
+        self.assertEqual(build_assistant_payload(cfg)["startSpeakingPlan"]["waitSeconds"], 0.6)
 
 
 class TestCampaign(unittest.TestCase):
