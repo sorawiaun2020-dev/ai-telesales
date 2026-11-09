@@ -78,6 +78,35 @@ class Product:
 
 
 @dataclass
+class Promo:
+    """โปรคละได้ เช่น "ถุงปลูกผักแสนดี" 1 ชุด 200 / 3 ชุด 500 คละขนาดได้."""
+    name: str
+    skus: list[str]
+    tiers: list[tuple[int, float]]  # (จำนวนชุด, ราคารวม) เรียงจากน้อยไปมาก
+
+    def best_price(self, qty: int, unit_price: float) -> tuple[float, list[tuple[int, int]]]:
+        """ราคาที่ถูกที่สุดสำหรับ qty ชุด (คละได้) และวิธีแบ่ง [(ขนาดขั้น, จำนวนครั้ง)].
+
+        ใช้ราคาต่อหน่วยของสินค้าเมื่อไม่มีขั้น 1 ชุด เช่น ขั้น 3 ชุด อย่างเดียว แล้วสั่ง 4 = 500 + 200
+        """
+        steps = {1: unit_price}
+        for q, price in self.tiers:
+            steps[q] = min(price, steps.get(q, price))
+        best = [0.0] + [float("inf")] * qty
+        pick = [0] * (qty + 1)
+        for n in range(1, qty + 1):
+            for q, price in steps.items():
+                if q <= n and best[n - q] + price < best[n]:
+                    best[n], pick[n] = best[n - q] + price, q
+        used: dict[int, int] = {}
+        n = qty
+        while n > 0:
+            used[pick[n]] = used.get(pick[n], 0) + 1
+            n -= pick[n]
+        return best[qty], sorted(used.items(), reverse=True)
+
+
+@dataclass
 class Calling:
     timezone: str = "Asia/Bangkok"
     days: list[int] = field(default_factory=lambda: [0, 1, 2, 3, 4, 5])  # 0 = จันทร์
@@ -110,11 +139,19 @@ class Config:
     assistant: dict[str, Any]
     products: list[Product]
     script: dict[str, Any] = field(default_factory=dict)  # บทพูดที่ผู้ใช้แก้เอง (ว่าง = ใช้ค่าเริ่มต้น)
+    promos: list[Promo] = field(default_factory=list)
 
     def product(self, sku: str) -> Product | None:
         for p in self.products:
             if p.sku.lower() == str(sku).strip().lower():
                 return p
+        return None
+
+    def promo_of(self, sku: str) -> Promo | None:
+        key = str(sku).strip().lower()
+        for pr in self.promos:
+            if key in (s.lower() for s in pr.skus):
+                return pr
         return None
 
 
@@ -141,6 +178,44 @@ def load_products(path: str) -> list[Product]:
     if not products:
         raise ConfigError(f"{path} ยังไม่มีสินค้า")
     return products
+
+
+def load_promos(path: str, products: list[Product]) -> list[Promo]:
+    return parse_promos(_read_json(path).get("promos") or [], products)
+
+
+def parse_promos(raw: list[dict[str, Any]], products: list[Product]) -> list[Promo]:
+    known = {p.sku.lower(): p.sku for p in products}
+    promos: list[Promo] = []
+    taken: dict[str, str] = {}
+    for i, r in enumerate(raw):
+        name = str(r.get("name") or "").strip()
+        if not name:
+            raise ConfigError(f"โปรลำดับที่ {i + 1} ต้องมีชื่อโปร")
+        skus = []
+        for s in r.get("skus") or []:
+            k = str(s).strip().lower()
+            if k not in known:
+                continue  # สินค้าถูกลบไปแล้ว — ข้าม
+            if k in taken:
+                raise ConfigError(f"สินค้า {known[k]} อยู่ทั้งโปร \"{taken[k]}\" และ \"{name}\" — สินค้า 1 ตัวอยู่ได้โปรเดียว")
+            taken[k] = name
+            skus.append(known[k])
+        if not skus:
+            raise ConfigError(f"โปร \"{name}\" ยังไม่ได้เลือกสินค้า")
+        tiers = []
+        for t in r.get("tiers") or []:
+            try:
+                q, price = int(t.get("qty")), float(t.get("price"))
+            except (TypeError, ValueError, AttributeError) as e:
+                raise ConfigError(f"โปร \"{name}\": จำนวนและราคาต้องเป็นตัวเลข") from e
+            if q < 1 or price < 0:
+                raise ConfigError(f"โปร \"{name}\": จำนวนต้องอย่างน้อย 1 และราคาต้องไม่ติดลบ")
+            tiers.append((q, price))
+        if not tiers:
+            raise ConfigError(f"โปร \"{name}\" ต้องมีราคาอย่างน้อย 1 ขั้น")
+        promos.append(Promo(name=name, skus=skus, tiers=sorted(dict(tiers).items())))
+    return promos
 
 
 PRODUCT_ROLES = ("main", "upsell", "backup", "other")
@@ -193,6 +268,7 @@ def load_config(config_path: str, products_path: str, secrets_path: str | None =
     _parse_hhmm(calling.start)
     _parse_hhmm(calling.end)
     vapi = raw.get("vapi") or {}
+    products = load_products(products_path)
     return Config(
         shop=shop,
         calling=calling,
@@ -200,6 +276,7 @@ def load_config(config_path: str, products_path: str, secrets_path: str | None =
         vapi_phone_number_id=resolve_env(vapi.get("phone_number_id", "env:VAPI_PHONE_NUMBER_ID"), secrets),
         vapi_assistant_id=resolve_env(vapi.get("assistant_id", "env:VAPI_ASSISTANT_ID"), secrets),
         assistant=dict(raw.get("assistant") or {}),
-        products=load_products(products_path),
+        products=products,
         script=dict(raw.get("script") or {}),
+        promos=load_promos(products_path, products),
     )

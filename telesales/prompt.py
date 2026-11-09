@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .config import Config, Product
+from .config import Config, Product, Promo
 
 # ผลลัพธ์ของสายที่ AI ต้องสรุป (ใช้ตัดสินว่าจะโทรซ้ำหรือไม่)
 OUTCOMES = {
@@ -25,16 +25,41 @@ def _fmt_price(v: float) -> str:
     return f"{int(v):,}" if float(v).is_integer() else f"{v:,.2f}"
 
 
-def _product_line(p: Product) -> str:
-    line = f"- [{p.sku}] {p.name}: {_fmt_price(p.price)} บาท/{p.unit}"
-    if p.min_qty > 1:
-        line += f" (ขั้นต่ำ {p.min_qty} {p.unit})"
+def _product_line(p: Product, promo: Promo | None = None) -> str:
+    if promo:
+        line = f"- [{p.sku}] {p.name}: ราคาตาม \"โปร{promo.name}\" (ดูด้านล่าง) หน่วย: {p.unit}"
+    else:
+        line = f"- [{p.sku}] {p.name}: {_fmt_price(p.price)} บาท/{p.unit}"
+        if p.min_qty > 1:
+            line += f" (ขั้นต่ำ {p.min_qty} {p.unit})"
     if p.details:
         line += f" — {p.details}"
     return line
 
 
-def build_catalog(products: list[Product]) -> str:
+def _promo_block(promo: Promo, products: list[Product]) -> str:
+    members = [p for p in products if p.sku in promo.skus]
+    unit = members[0].unit if members else "ชิ้น"
+    base = max((p.price for p in members), default=0.0)
+    tiers = ", ".join(f"{q} {unit} {_fmt_price(price)} บาท" for q, price in promo.tiers)
+    top = max(q for q, _ in promo.tiers)
+    table = ", ".join(f"{n} {unit} = {_fmt_price(promo.best_price(n, base)[0])} บาท"
+                      for n in range(1, max(6, top * 2) + 1))
+    lines = [
+        f"- โปร{promo.name}: เลือกได้จาก " + ", ".join(f"[{p.sku}] {p.name}" for p in members)
+        + (" (คละกันได้)" if len(members) > 1 else ""),
+        f"  ราคาโปร: {tiers}",
+        f"  ราคารวมตามจำนวน (คำนวณให้แล้ว ใช้ตัวเลขนี้เท่านั้น ห้ามคิดเอง): {table}",
+    ]
+    saving = base * top - promo.best_price(top, base)[0]
+    if top > 1 and saving > 0:
+        lines.append(f"  ชวนลูกค้ารับ {top} {unit} จะได้ราคาพิเศษ ประหยัด {_fmt_price(saving)} บาท")
+    return "\n".join(lines)
+
+
+def build_catalog(products: list[Product], promos: list[Promo] | None = None) -> str:
+    promos = promos or []
+    promo_of = {s: pr for pr in promos for s in pr.skus}
     groups = (
         ("main", "สินค้าหลัก (เสนอก่อนเสมอ)"),
         ("upsell", "สินค้าอัปเซล (เสนอเพิ่ม 1 ครั้ง หลังลูกค้าตกลงซื้อสินค้าหลักแล้ว)"),
@@ -45,7 +70,9 @@ def build_catalog(products: list[Product]) -> str:
     for role, title in groups:
         items = [p for p in products if p.role == role]
         if items:
-            parts.append(f"{title}:\n" + "\n".join(_product_line(p) for p in items))
+            parts.append(f"{title}:\n" + "\n".join(_product_line(p, promo_of.get(p.sku)) for p in items))
+    if promos:
+        parts.append("โปรราคาพิเศษ:\n" + "\n".join(_promo_block(pr, products) for pr in promos))
     return "\n\n".join(parts)
 
 
@@ -143,7 +170,7 @@ def _shop_values(cfg: Config) -> dict[str, str]:
     return {
         "ชื่อร้าน": shop["name"],
         "ชื่อพนักงาน": shop.get("agent_name") or "น้องฝน",
-        "รายการสินค้า": build_catalog(cfg.products),
+        "รายการสินค้า": build_catalog(cfg.products, cfg.promos),
         "ค่าส่ง": shop.get("shipping_note") or "แจ้งลูกค้าว่าทางร้านจะแจ้งค่าส่งอีกครั้ง",
         "ช่องทางชำระเงิน": " หรือ ".join(shop.get("payment_methods") or ["เก็บเงินปลายทาง"]),
         "โปรโมชัน": (shop.get("promotion") or "").strip() or "ไม่มีโปรโมชันพิเศษตอนนี้",

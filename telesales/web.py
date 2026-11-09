@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import db as dbm
 from .campaign import call_variables, place_calls, sync_results
 from .config import (SECRET_KEYS, Calling, Config, ConfigError, load_config, load_secrets,
-                     parse_products, save_secrets, write_json, _read_json)
+                     parse_products, parse_promos, save_secrets, write_json, _read_json)
 from .export import OUTCOME_TH, STATUS_TH, export_all
 from .phone import normalize_th
 from . import prompt as pr
@@ -198,6 +198,7 @@ class App:
             "calling": raw.get("calling") or {},
             "assistant": raw.get("assistant") or {},
             "products": _read_json(self.paths.products).get("products") or [],
+            "promos": _read_json(self.paths.products).get("promos") or [],
             "secrets": secret_set,
             "stats": stats,
             "labels": {"status": STATUS_TH, "outcome": OUTCOME_TH},
@@ -253,10 +254,14 @@ class App:
         products = parse_products(items)
         with self._file_lock:
             raw = _read_json(self.paths.products)
+            promos_raw = body["promos"] if isinstance(body.get("promos"), list) else raw.get("promos") or []
+            promos = parse_promos(promos_raw, products)
             raw["products"] = [p.__dict__ for p in products]
+            raw["promos"] = [{"name": pr.name, "skus": pr.skus,
+                              "tiers": [{"qty": q, "price": price} for q, price in pr.tiers]} for pr in promos]
             write_json(self.paths.products, raw)
-        log.info("บันทึกสินค้า %d รายการแล้ว", len(products))
-        return {"ok": True, "count": len(products)}
+        log.info("บันทึกสินค้า %d รายการ โปร %d รายการแล้ว", len(products), len(promos))
+        return {"ok": True, "count": len(products), "promos": len(promos)}
 
     def sync_assistant(self) -> dict:
         cfg = self.cfg()

@@ -140,6 +140,11 @@
   .role-backup { border-left: 4px solid var(--warn-dot); }
   .role-other { border-left: 4px solid var(--line); }
   .flow { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 14px; }
+  .promo { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: var(--bg); }
+  .promo .members label { display: inline-flex; gap: 6px; align-items: center; margin: 0 14px 6px 0; color: var(--ink); font-size: 14px; }
+  .promo .tier { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .promo .tier input { width: 110px; }
+  .promo .calc { font-size: 13.5px; color: var(--ink2); margin-top: 8px; }
   .flow div { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
   .flow b { display: block; margin-bottom: 2px; }
   ol.steps { padding-left: 20px; margin: 0 0 8px; } ol.steps li { margin-bottom: 14px; }
@@ -358,6 +363,17 @@
             <button class="btn pri" id="syncAsst">อัปเดตบทพูดให้ AI</button>
             <button class="btn" id="showPrompt">📝 แก้บทพูดของ AI</button>
           </div>
+        </div>
+        <div class="card">
+          <div class="head">
+            <div><h2>🏷️ โปรราคาพิเศษ (คละได้)</h2>
+              <p class="sub" style="margin:0">เช่น "ถุงปลูกผักแสนดี" 1 ชุด 200 / 3 ชุด 500 คละขนาดได้ — ระบบคิดราคาที่ถูกที่สุดให้ลูกค้าเอง
+                และส่งตารางราคาให้ AI จะได้ไม่คิดเลขผิด</p></div>
+            <button class="btn" id="promoAdd">+ เพิ่มโปร</button>
+          </div>
+          <div id="promoList"></div>
+          <p class="muted small" style="margin:8px 0 0">แก้เสร็จกด <b>บันทึก</b> หรือ <b>อัปเดตบทพูดให้ AI</b> ด้านบน (บันทึกสินค้าและโปรพร้อมกัน)
+            · ราคาในตารางสินค้าของสินค้าที่อยู่ในโปร ให้ใส่เป็นราคา 1 ชุด</p>
         </div>
       </section>
 
@@ -868,12 +884,71 @@ function readProducts() {
   }).filter((p) => p.sku || p.name);
 }
 $("prodAdd").onclick = () => $("prodTbl").tBodies[0].append(prodRow({ role: "other" }));
+
+// ---------- promos ----------
+function promoBest(n, tiers, unit) {
+  const steps = { 1: unit }; tiers.forEach(([q, p]) => { if (q >= 1) steps[q] = Math.min(p, steps[q] ?? p); });
+  const best = [0]; for (let i = 1; i <= n; i++) { best[i] = Infinity; for (const q in steps) if (+q <= i) best[i] = Math.min(best[i], best[i - q] + steps[q]); }
+  return best[n];
+}
+function promoCard(pr = { name: "", skus: [], tiers: [{ qty: 1, price: "" }, { qty: 3, price: "" }] }) {
+  const el = document.createElement("div"); el.className = "promo";
+  el.innerHTML = `<div class="row" style="margin-bottom:8px"><div><label>ชื่อโปร</label><input data-f="name" placeholder="เช่น ถุงปลูกผักแสนดี" value="${esc(pr.name)}"></div></div>
+    <label>สินค้าที่ร่วมโปร (ลูกค้าคละกันได้)</label><div class="members"></div>
+    <label style="margin-top:6px">ขั้นราคา</label><div class="tiers"></div>
+    <div class="btns"><button class="btn sm" data-a="tier">+ เพิ่มขั้นราคา</button><button class="btn sm bad" data-a="del">ลบโปรนี้</button></div>
+    <div class="calc"></div>`;
+  el.dataset.skus = JSON.stringify(pr.skus || []);
+  const tiers = el.querySelector(".tiers");
+  const addTier = (t = { qty: "", price: "" }) => {
+    const d = document.createElement("div"); d.className = "tier";
+    d.innerHTML = `<input type="number" min="1" data-t="qty" value="${esc(t.qty)}"><span class="small">ชุด/ชิ้น ราคารวม</span>
+      <input type="number" min="0" step="any" data-t="price" value="${esc(t.price)}"><span class="small">บาท</span><button class="btn sm bad">✕</button>`;
+    d.querySelector("button").onclick = () => { d.remove(); calcPromo(el); };
+    tiers.append(d);
+  };
+  (pr.tiers || []).forEach(addTier);
+  el.querySelector('[data-a="tier"]').onclick = () => { addTier(); };
+  el.querySelector('[data-a="del"]').onclick = () => el.remove();
+  el.addEventListener("input", () => calcPromo(el));
+  el.addEventListener("change", () => calcPromo(el));
+  renderPromoMembers(el); calcPromo(el);
+  return el;
+}
+function renderPromoMembers(el) {
+  const chosen = new Set(el.querySelectorAll(".members input").length
+    ? [...el.querySelectorAll(".members input:checked")].map((c) => c.value) : JSON.parse(el.dataset.skus || "[]"));
+  el.querySelector(".members").innerHTML = readProducts().filter((p) => p.sku).map((p) =>
+    `<label><input type="checkbox" value="${esc(p.sku)}" ${chosen.has(p.sku) ? "checked" : ""}> ${esc(p.name || p.sku)} <span class="muted small">(${esc(p.sku)})</span></label>`).join("")
+    || `<span class="muted small">ยังไม่มีสินค้าในตารางด้านบน</span>`;
+}
+function readPromo(el) {
+  return { name: el.querySelector('[data-f="name"]').value.trim(),
+    skus: [...el.querySelectorAll(".members input:checked")].map((c) => c.value),
+    tiers: [...el.querySelectorAll(".tier")].map((d) => ({ qty: Number(d.querySelector('[data-t="qty"]').value), price: Number(d.querySelector('[data-t="price"]').value) }))
+      .filter((t) => t.qty >= 1 && d_ok(t)) };
+}
+const d_ok = (t) => !Number.isNaN(t.price) && t.price >= 0;
+function calcPromo(el) {
+  const pr = readPromo(el), prods = readProducts().filter((p) => pr.skus.includes(p.sku));
+  const box = el.querySelector(".calc");
+  if (!pr.skus.length || !pr.tiers.length) { box.textContent = "เลือกสินค้าและใส่ขั้นราคา แล้วจะเห็นตัวอย่างราคาตรงนี้"; return; }
+  const unit = Math.max(...prods.map((p) => p.price || 0)), u = (prods[0] && prods[0].unit) || "ชิ้น";
+  const top = Math.max(...pr.tiers.map((t) => t.qty));
+  const list = []; for (let n = 1; n <= Math.max(6, top * 2); n++) list.push(`${n} ${u} = ฿${fmt(promoBest(n, pr.tiers.map((t) => [t.qty, t.price]), unit))}`);
+  box.innerHTML = `<b>ตัวอย่างราคาที่ลูกค้าจ่าย (AI จะได้ตารางนี้):</b> ${esc(list.join(" · "))}`;
+}
+function readPromos() { return [...$("promoList").children].map(readPromo).filter((p) => p.name || p.skus.length); }
+function renderPromos() { const box = $("promoList"); box.innerHTML = ""; (S.promos || []).forEach((p) => box.append(promoCard(p))); }
+$("promoAdd").onclick = () => $("promoList").append(promoCard());
+// เปลี่ยนรหัส/ชื่อ/ราคาสินค้าในตาราง -> อัปเดตรายการสินค้าในกล่องโปร
+$("prodTbl").addEventListener("change", () => [...$("promoList").children].forEach((el) => { renderPromoMembers(el); calcPromo(el); }));
 $("prodSave").onclick = (e) => busy(e.target, async () => {
-  const r = await api("/api/products", { products: readProducts() });
-  toast(`บันทึกสินค้า ${r.count} รายการแล้ว — อย่าลืมกด 'อัปเดตบทพูดให้ AI'`); await loadState();
+  const r = await api("/api/products", { products: readProducts(), promos: readPromos() });
+  toast(`บันทึกสินค้า ${r.count} รายการ โปร ${r.promos} รายการแล้ว — อย่าลืมกด 'อัปเดตบทพูดให้ AI'`); await loadState();
 });
 $("syncAsst").onclick = (e) => busy(e.target, async () => {
-  await api("/api/products", { products: readProducts() });
+  await api("/api/products", { products: readProducts(), promos: readPromos() });
   const r = await api("/api/sync-assistant", {});
   toast(r.created ? "สร้าง AI บน Vapi แล้ว" : "อัปเดตบทพูดของ AI แล้ว"); loadState();
 });
@@ -973,7 +1048,7 @@ $("openFolder").onclick = (e) => busy(e.target, async () => {
 
 // ---------- start ----------
 (async () => {
-  try { await loadState(); renderProducts(); renderSettings(); await loadDashboard(); loadLogs(); }
+  try { await loadState(); renderProducts(); renderPromos(); renderSettings(); await loadDashboard(); loadLogs(); }
   catch (e) { toast(e.message, true); }
   setInterval(() => {
     loadState().then(refreshPage).catch(() => {});

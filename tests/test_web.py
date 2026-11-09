@@ -296,6 +296,38 @@ class TestDashboard(unittest.TestCase):
         _, sc = self.req("/api/script")
         self.assertTrue(sc["is_default"])
 
+    def test_mix_and_match_promo(self):
+        from telesales import db as dbm
+        prods = [{"sku": s, "name": f"ถุงปลูกผักแสนดี {n}", "price": 200, "unit": "ชุด", "role": "main", "details": d}
+                 for s, n, d in (("S", "5x11", "30 ใบ"), ("M", "8x15", "15 ใบ"), ("L", "10x20", "10 ใบ"))]
+        prods.append({"sku": "SOIL", "name": "ดิน", "price": 89, "unit": "กระสอบ", "role": "upsell"})
+        promo = {"name": "ถุงปลูกผักแสนดี", "skus": ["S", "M", "L"], "tiers": [{"qty": 1, "price": 200}, {"qty": 3, "price": 500}]}
+        code, r = self.req("/api/products", {"products": prods, "promos": [promo]})
+        self.assertEqual((code, r["promos"]), (200, 1))
+        _, p = self.req("/api/prompt")
+        self.assertIn("3 ชุด = 500 บาท", p["system_prompt"])
+        self.assertIn("4 ชุด = 700 บาท", p["system_prompt"])
+        self.assertIn("(คละกันได้)", p["system_prompt"])
+
+        db = dbm.DB(os.path.join(self.tmp, "telesales.db"))
+        db.import_rows([{"name": "ป้าแดง", "phone": "0811111111"}])
+        for cid, items in (("a", [{"sku": "S", "qty": 1}, {"sku": "M", "qty": 1}, {"sku": "L", "qty": 1}]),
+                           ("b", [{"sku": "S", "qty": 4}, {"sku": "SOIL", "qty": 1}])):
+            db.record_call_started(cid, "+66811111111")
+            db.record_call_result(cid, status="ended", ended_reason="x", outcome="ordered", summary="",
+                                  data={"items": items}, recording_url=None, transcript=None, cost=0,
+                                  customer_status=dbm.DONE)
+        db.close()
+        _, calls = self.req("/api/calls?outcome=ordered")
+        totals = {c["id"]: c["order"]["total"] for c in calls["rows"]}
+        self.assertEqual(totals, {"a": 500, "b": 789})      # คละ 3 ขนาด = 500, 4 ชุด = 700 + ดิน 89
+        _, d = self.req("/api/dashboard")
+        self.assertEqual(d["kpi"]["revenue"], 1289)
+        self.assertEqual(round(sum(x["revenue"] for x in d["top_products"])), 1289)
+
+        bad = dict(promo, name="โปร 2")
+        self.assertEqual(self.req("/api/products", {"products": prods, "promos": [promo, bad]})[0], 400)
+
     def test_password(self):
         self.app.close()
         self.httpd.shutdown()

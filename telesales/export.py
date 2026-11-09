@@ -28,9 +28,14 @@ STATUS_TH = {
 }
 
 
-def price_order(cfg: Config, items: list[dict]) -> tuple[list[str], float, list[str]]:
-    """คิดราคาจาก products.json เอง (ไม่เชื่อตัวเลขที่ AI พูด). คืน (บรรทัดสินค้า, ยอดรวม, คำเตือน)."""
+def price_breakdown(cfg: Config, items: list[dict]) -> dict:
+    """คิดราคาจาก products.json เอง (ไม่เชื่อตัวเลขที่ AI พูด) รวมโปรคละได้.
+
+    คืน {"lines", "total", "warnings", "revenue": {sku: ยอดของสินค้านั้น}} — สินค้าในโปรแบ่งยอดตามสัดส่วนจำนวน
+    """
     lines, total, warnings = [], 0.0, []
+    revenue: dict[str, float] = {}
+    groups: dict[str, list[tuple[object, float]]] = {}
     for it in items or []:
         sku = str(it.get("sku") or "")
         try:
@@ -43,12 +48,36 @@ def price_order(cfg: Config, items: list[dict]) -> tuple[list[str], float, list[
             continue
         if qty < p.min_qty:
             warnings.append(f"{p.name} สั่ง {qty:g} ต่ำกว่าขั้นต่ำ {p.min_qty}")
+        promo = cfg.promo_of(p.sku)
+        if promo and qty > 0:
+            groups.setdefault(promo.name, []).append((p, qty))
+            continue
         sub = p.price * qty
         total += sub
+        revenue[p.sku] = revenue.get(p.sku, 0.0) + sub
         lines.append(f"{p.name} x{qty:g} = {sub:,.0f}")
+    for promo in cfg.promos:
+        members = groups.get(promo.name)
+        if not members:
+            continue
+        n = int(round(sum(q for _, q in members)))
+        unit = max(p.price for p, _ in members)
+        cost, split = promo.best_price(n, unit)
+        total += cost
+        for p, q in members:
+            revenue[p.sku] = revenue.get(p.sku, 0.0) + cost * q / n
+        picked = " + ".join(f"{q} {members[0][0].unit}" + (f" x{k}" if k > 1 else "") for q, k in split)
+        lines.append(f"โปร{promo.name}: " + ", ".join(f"{p.name} x{q:g}" for p, q in members)
+                     + f" (รวม {n} {members[0][0].unit}: {picked}) = {cost:,.0f}")
     if not lines:
         warnings.append("ไม่มีรายการสินค้า")
-    return lines, total, warnings
+    return {"lines": lines, "total": total, "warnings": warnings, "revenue": revenue}
+
+
+def price_order(cfg: Config, items: list[dict]) -> tuple[list[str], float, list[str]]:
+    """คืน (บรรทัดสินค้า, ยอดรวม, คำเตือน)."""
+    b = price_breakdown(cfg, items)
+    return b["lines"], b["total"], b["warnings"]
 
 
 def delivery(data: dict, row) -> dict[str, str]:

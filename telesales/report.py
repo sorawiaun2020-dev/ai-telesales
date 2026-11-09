@@ -8,7 +8,7 @@ from typing import Any
 from . import db as dbm
 from . import xlsx
 from .config import Config
-from .export import OUTCOME_TH, STATUS_TH, delivery, price_order
+from .export import OUTCOME_TH, STATUS_TH, delivery, price_breakdown, price_order
 
 ORDER_STATUS_TH = {"": "รอยืนยัน", "confirmed": "ยืนยันแล้ว", "shipped": "ส่งแล้ว", "cancelled": "ยกเลิก"}
 _NOT_TALKED = ("no_answer", "unknown", None)
@@ -28,7 +28,8 @@ def order_of(cfg: Config, data: dict) -> dict[str, Any]:
     found = (cfg.product(str(i.get("sku") or "")) for i in items)
     roles = {p.role for p in found if p}
     return {"lines": lines, "total": total, "warnings": warnings,
-            "has_upsell": "upsell" in roles, "has_backup": "backup" in roles}
+            "has_upsell": "upsell" in roles, "has_backup": "backup" in roles,
+            "revenue": price_breakdown(cfg, items)["revenue"]}
 
 
 def dashboard(cfg: Config, db: dbm.DB, days: int = 14, now: datetime | None = None) -> dict[str, Any]:
@@ -85,7 +86,7 @@ def dashboard(cfg: Config, db: dbm.DB, days: int = 14, now: datetime | None = No
             row = products.setdefault(p.sku, {"sku": p.sku, "name": p.name, "unit": p.unit, "role": p.role,
                                               "qty": 0.0, "revenue": 0.0})
             row["qty"] += qty
-            row["revenue"] += qty * p.price
+            row["revenue"] += o["revenue"].get(p.sku, 0.0)
 
     def rate(a: int, b: int) -> float | None:
         return round(a / b, 4) if b else None
